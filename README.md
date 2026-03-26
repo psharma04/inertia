@@ -22,13 +22,13 @@ Built by humans, for humans.
 
 </h3>
 
-<p align="center">
+<div align="center">
 
 Inertia is a pure Swift client for Reticulum, LXMF, and NomadNet. It's designed to provide a simple entrypoint for privacy-conscious people to try out a truly decentralised network, without needing to buy new gear.
 
 **THIS IS ALPHA SOFTWARE. DO NOT RELY ON THIS FOR CRITICAL COMMUNICATION, AND EXPECT YOUR DATA TO BE LOST EVERY TIME A NEW VERSION IS INSTALLED.**
 
-</p>
+</div>
 
 ## Features
 
@@ -58,7 +58,7 @@ Inertia is a pure Swift client for Reticulum, LXMF, and NomadNet. It's designed 
 
 ## Contact
 
-- Matrix (preferred): [@pepsi:inyourair.space](https://matrix.to/#/@pepsi:inyourair.space)
+- Matrix space (preferred): [#inertia:inyourair.space](https://matrix.to/#/#inertia:inyourair.space)
 - LXMF: 3662d822203188617b2e44f2908b0bb3
 
 ## Building & Contributing
