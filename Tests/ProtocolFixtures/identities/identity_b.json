@@ -1,0 +1,17 @@
+{
+  "description": "Reticulum Identity 'identity_b' deterministic public-key vector. Swift tests verify that Identity.hash, publicKey, sign(), and verify() produce identical results to the Python reference.",
+  "rns_version": "1.1.3",
+  "inputs": {},
+  "expected": {
+    "public_key_hex": "79a631eede1bf9c98f12032cdeadd0e7a079398fc786b88cc846ec89af85a51a174553b456dddfc6908ecab1c101fe6ab21e2baa0617795b7d43a63482993fd5",
+    "x25519_public_key_hex": "79a631eede1bf9c98f12032cdeadd0e7a079398fc786b88cc846ec89af85a51a",
+    "ed25519_public_key_hex": "174553b456dddfc6908ecab1c101fe6ab21e2baa0617795b7d43a63482993fd5",
+    "identity_hash_hex": "069092a03c194639207219dd05f9c840",
+    "full_hash_hex": "069092a03c194639207219dd05f9c84009da64f25f7ddbbd3bf10ab3e572b688",
+    "signature_test_vector": {
+      "message_hex": "496e65727469612070726f746f636f6c20636f6d7061746962696c697479207465737420766563746f72",
+      "message_utf8": "Inertia protocol compatibility test vector",
+      "signature_hex": "fb576c354c98b44ff6c00a97abe44c2806feac4040af3cf635042680c8437114f5253302eeea40fb58e4011afff632e4cd301adef3bd5a74afd0f3feb1bb850b"
+    }
+  }
+}

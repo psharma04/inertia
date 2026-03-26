@@ -1,0 +1,24 @@
+{
+  "description": "Basic announce packet for a SINGLE IN destination. Contains the destination hash, public key, app_data, and an Ed25519 signature.  Swift must validate the signature and compute the same announce bytes.",
+  "rns_version": "1.1.3",
+  "inputs": {
+    "identity_public_key_hex": "8f40c5adb68f25624ae5b214ea767a6ec94d829d3d7b5e1ad1ba6f3e2138285f29acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd7",
+    "identity_hash_hex": "aca31af0441d81dbec71e82da0b4b5f5",
+    "app_name": "inertia",
+    "aspect": "test",
+    "app_data_hex": "68656c6c6f",
+    "app_data_utf8": "hello"
+  },
+  "expected": {
+    "destination_hash_hex": "216da4694c4024e15dcd33b259af1f32",
+    "raw_hex": "0100216da4694c4024e15dcd33b259af1f32008f40c5adb68f25624ae5b214ea767a6ec94d829d3d7b5e1ad1ba6f3e2138285f29acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd7e0b6c880370d3def9436a8bb78f6870069afbc3113f2b7ab888feefc82d952d11a1fa83a727caea32464e549223dcef7806e09e5b7ba91929a444c3c55c65ed77762d5c859455f5e158af4861f39bef66ca5ee0b68656c6c6f",
+    "header_byte_hex": "01",
+    "hops_byte_hex": "00",
+    "destination_hash_in_raw_hex": "216da4694c4024e15dcd33b259af1f32",
+    "public_key_in_raw_hex": "008f40c5adb68f25624ae5b214ea767a6ec94d829d3d7b5e1ad1ba6f3e2138285f29acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966d",
+    "name_hash_in_raw_hex": "d7e0b6c880370d3def94",
+    "random_hash_in_raw_hex": "36a8bb78f6870069afbc",
+    "signature_in_raw_hex": "3113f2b7ab888feefc82d952d11a1fa83a727caea32464e549223dcef7806e09e5b7ba91929a444c3c55c65ed77762d5c859455f5e158af4861f39bef66ca5ee",
+    "app_data_in_raw_hex": "0b68656c6c6f"
+  }
+}

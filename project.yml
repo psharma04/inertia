@@ -1,0 +1,79 @@
+name: Inertia
+
+options:
+  bundleIdPrefix: chat.inertia
+  deploymentTarget:
+    iOS: "26.0"
+  defaultConfig: Debug
+
+# All SPM products (ReticulumCrypto, LXMF, etc.) are resolved automatically.
+packages:
+  InertiaCore:
+    path: .
+
+targets:
+  Inertia:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - App/Sources
+    resources:
+      - App/Resources/Assets.xcassets
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Inertia
+        CFBundleShortVersionString: "0.1"
+        CFBundleVersion: "1"
+        NSFaceIDUsageDescription: "Inertia uses Face ID to lock and unlock access to your local data."
+        UILaunchScreen:
+          UIColorName: ""
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    dependencies:
+      - package: InertiaCore
+        product: ReticulumCrypto
+      - package: InertiaCore
+        product: ReticulumPackets
+      - package: InertiaCore
+        product: ReticulumInterfaces
+      - package: InertiaCore
+        product: LXMF
+      - package: InertiaCore
+        product: NomadNet
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: chat.inertia.app
+      SWIFT_VERSION: "6.0"
+      CODE_SIGN_STYLE: Automatic
+      # I set this in XCode, not here
+      # DEVELOPMENT_TEAM: XXXXXXXXXX
+      MARKETING_VERSION: "0.1"
+      CURRENT_PROJECT_VERSION: "1"
+      ASSETCATALOG_COMPILER_APPICON_NAME: messages-icon
+      ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+      ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
+
+  InertiaTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "26.0"
+    settings:
+      GENERATE_INFOPLIST_FILE: YES
+    sources:
+      - App/Tests/AppTests
+    dependencies:
+      - target: Inertia
+      - package: InertiaCore
+        product: ReticulumCrypto
+
+configs:
+  Debug: debug
+  Release: release

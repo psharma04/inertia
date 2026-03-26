@@ -4,13 +4,14 @@
 ![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/psharma04/inertia)
 ![GitHub Release](https://img.shields.io/github/v/release/psharma04/inertia)
 
-
 </div>
 
 &nbsp;
 
 <div align="center">
-![Inertia for iOS](assets/banner/gh-banner.png)
+
+![Inertia for iOS](https://inertia.chat/assets/banner/gh-banner.png)
+
 </div>
 
 <h3 align="center">
@@ -36,9 +37,10 @@ Inertia is a pure Swift client for Reticulum, LXMF, and NomadNet. It's designed 
 
 ## Planned
 
-- [ ] Auto-interface support
 - [x] First install/setup flow
 - [x] Key importing/exporting
+- [ ] Accessibility and contrast in UI elements
+- [ ] Auto-interface support
 - [ ] Access pages on the Nomad Network
 - [ ] Use propagation nodes to stop messages from being lost in transit
 - [ ] Send/receive images and other files
@@ -52,6 +54,7 @@ Inertia is a pure Swift client for Reticulum, LXMF, and NomadNet. It's designed 
 - [ ] Bookmarking Nomad Network pages
 - [ ] NomadNet and LXMF URL scheme
 - [ ] iOS Shortcuts support
+- [ ] Getting a better logo
 
 ## Contact
 
@@ -60,9 +63,15 @@ Inertia is a pure Swift client for Reticulum, LXMF, and NomadNet. It's designed 
 
 ## Building & Contributing
 
-Requires iOS >26.0 and XCode >16.0. Dependencies are managed by SPM.
+Requires iOS >26.0 and XCode >26.0. Dependencies are managed by SPM.
 
-Clone the repository, open `Inertia.xcodeproj`, select a signing team, and build.
+1. Clone the repository
+2. `brew install xcodegen`
+3. `cd` into the repository
+4. `xcodegen generate`
+5. Open the generated `Inertia.xcodeproj` in XCode.
+5. Set signing team
+6. Run build
 
 Pull requests are more than welcome [(please look at the project board if you want to contribute but don't know what's needed)](https://github.com/users/psharma04/projects/5), but AI usage in any manner will result in the PR being ignored and immediately closed.
 

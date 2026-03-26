@@ -1,0 +1,20 @@
+{
+  "description": "Unencrypted DATA packet sent to a PLAIN destination. The raw bytes must match exactly when serialised by Swift.",
+  "rns_version": "1.1.3",
+  "inputs": {
+    "destination_hash_hex": "94366fa58c6587621d34caca061d29c4",
+    "destination_type": "PLAIN",
+    "packet_type": "DATA",
+    "payload_hex": "74657374207061796c6f6164",
+    "payload_utf8": "test payload",
+    "hops": 0
+  },
+  "expected": {
+    "raw_hex": "080094366fa58c6587621d34caca061d29c40074657374207061796c6f6164",
+    "header_byte_hex": "08",
+    "hops_byte_hex": "00",
+    "destination_hash_hex": "94366fa58c6587621d34caca061d29c4",
+    "context_byte_hex": "00",
+    "payload_hex": "74657374207061796c6f6164"
+  }
+}
