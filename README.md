@@ -99,7 +99,10 @@ Development bounties are something I might consider if the project grows in popu
 
 ### Can I give you money?
 
-Soon™️.
+Many options are available:
+- [GitHub Sponsors](https://github.com/sponsors/psharma04)
+- [OpenCollective](https://opencollective.com/inertia)
+- [Ko-Fi](https://ko-fi.com/hyperbolicpurple)
 
 ## Licensing
 
