@@ -1,7 +1,35 @@
 import Foundation
 import ReticulumCrypto
 
-// Errors
+public enum LXMFField: Int, Sendable {
+    case embeddedLXMs     = 0x01
+    case telemetry        = 0x02
+    case telemetryStream  = 0x03
+    case iconAppearance   = 0x04
+    case fileAttachments  = 0x05
+    case image            = 0x06
+    case audio            = 0x07
+    case thread           = 0x08
+    case commands         = 0x09
+    case results          = 0x0A
+    case group            = 0x0B
+    case ticket           = 0x0C
+    case event            = 0x0D
+    case rnrRefs          = 0x0E
+    case renderer         = 0x0F
+    case customType       = 0xFB
+    case customData       = 0xFC
+    case customMeta       = 0xFD
+    case nonSpecific      = 0xFE
+    case debug            = 0xFF
+}
+
+public enum LXMFRenderer: Int, Sendable {
+    case plain   = 0x00
+    case micron  = 0x01
+    case markdown = 0x02
+    case bbcode  = 0x03
+}
 
 public enum LXMFError: Error, Sendable {
     case invalidLength(Int)
@@ -13,76 +41,37 @@ public enum LXMFError: Error, Sendable {
     case stampGenerationFailed
 }
 
-// LXMFMessage
-
-/// A decoded LXMF message, byte-compatible with the Python LXMF reference
-/// implementation (lxmf >= 0.9.4 / rns >= 1.1.3).
-///
-/// Wire format (packed bytes):
-///   [destinationHash: 16 bytes]
-///   [sourceHash:      16 bytes]
-///   [signature:       64 bytes]   Ed25519 over signedPart
-///   [msgpackPayload:  variable]   msgpack([timestamp, title, content, fields, ...])
-///
-/// Stamps:
-/// - Optional stamp is payload element 5 (`index 4`) and is **not** part of
-///   message hash/signature inputs in Python LXMF.
-/// - `hash` and signature verification use the unstamped payload bytes.
 public struct LXMFMessage: Sendable {
     public static let ticketStampValue = 0x100
 
-    // MARK: Wire-format fields
-
-    /// 16-byte LXMF destination hash.
     public let destinationHash: Data
-
-    /// 16-byte LXMF source hash (destination hash of the sender).
     public let sourceHash: Data
-
-    /// 64-byte Ed25519 signature covering signedPart.
     public let signature: Data
-
-    /// Raw msgpack-encoded payload bytes as received (may include optional stamp).
     public let msgpackPayload: Data
 
-    /// Msgpack payload bytes for `[timestamp, title, content, fields]`.
-    /// This canonical payload is used for hash/signature calculations.
+    /// Canonical payload used for hash/signature calculations.
     public let canonicalMsgpackPayload: Data
 
-    // MARK: Decoded payload fields
-
-    /// Unix timestamp decoded from msgpack payload element[0] (float64).
     public let timestamp: Double
-
-    /// Message title decoded from msgpack payload element[1] (bin or str).
     public let title: String
-
-    /// Message content decoded from msgpack payload element[2] (bin or str).
     public let content: String
 
-    /// LXMF extension fields decoded from msgpack payload element[3] (map).
-    /// Integer keys map to raw msgpack-encoded value bytes.
+    /// LXMF extension fields (integer keys → raw msgpack-encoded value bytes).
     public let fields: [Int: Data]
 
-    /// Optional 32-byte message stamp (payload element 5 in Python LXMF).
+    /// Optional 32-byte message stamp.
     public let stamp: Data?
 
-    // Parsing
-
-    /// Parse an LXMF message from packed wire-format bytes.
-    ///
-    /// - Throws: LXMFError.invalidLength if packed is shorter than 96 bytes.
-    /// - Throws: LXMFError.invalidMsgpack if the msgpack payload is malformed.
     public init(packed: Data) throws {
         let minLength = 16 + 16 + 64
         guard packed.count >= minLength else {
             throw LXMFError.invalidLength(packed.count)
         }
 
-        let base       = packed.startIndex
-        let destHash   = Data(packed[base       ..< base + 16])
-        let srcHash    = Data(packed[base + 16  ..< base + 32])
-        let sig        = Data(packed[base + 32  ..< base + 96])
+        let base = packed.startIndex
+        let destHash = Data(packed[base ..< base + 16])
+        let srcHash = Data(packed[base + 16 ..< base + 32])
+        let sig = Data(packed[base + 32 ..< base + 96])
         let rawPayload = Data(packed[(base + 96)...])
 
         var reader = MsgpackReader(rawPayload)
@@ -91,10 +80,10 @@ public struct LXMFMessage: Sendable {
             throw LXMFError.missingField("payload array must have at least 4 elements, got \(elementCount)")
         }
 
-        let ts       = try reader.readFloat64()
-        let titleD   = try reader.readBytesOrString()
+        let ts = try reader.readFloat64()
+        let titleD = try reader.readBytesOrString()
         let contentD = try reader.readBytesOrString()
-        let flds     = try reader.readIntKeyedDict()
+        let flds = try reader.readIntKeyedDict()
 
         var parsedStamp: Data? = nil
         if elementCount >= 5 {
@@ -122,18 +111,16 @@ public struct LXMFMessage: Sendable {
         )
 
         self.destinationHash = destHash
-        self.sourceHash      = srcHash
-        self.signature       = sig
-        self.msgpackPayload  = rawPayload
+        self.sourceHash = srcHash
+        self.signature = sig
+        self.msgpackPayload = rawPayload
         self.canonicalMsgpackPayload = canonicalPayload
-        self.timestamp       = ts
-        self.title           = String(data: titleD, encoding: .utf8) ?? ""
-        self.content         = String(data: contentD, encoding: .utf8) ?? ""
-        self.fields          = flds
-        self.stamp           = parsedStamp
+        self.timestamp = ts
+        self.title = String(data: titleD, encoding: .utf8) ?? ""
+        self.content = String(data: contentD, encoding: .utf8) ?? ""
+        self.fields = flds
+        self.stamp = parsedStamp
     }
-
-    // Serialization
 
     /// Re-serialise this message with the original payload bytes.
     public func pack() throws -> Data {
@@ -146,12 +133,6 @@ public struct LXMFMessage: Sendable {
         return result
     }
 
-    // Cryptographic properties
-
-    /// Full 32-byte SHA-256 of destinationHash + sourceHash + canonical payload.
-    ///
-    /// This matches Python `LXMessage.message_id` behavior even when a stamp is
-    /// present in the packed payload.
     public var hash: Data {
         Self.computeMessageHash(
             destinationHash: destinationHash,
@@ -160,10 +141,6 @@ public struct LXMFMessage: Sendable {
         )
     }
 
-    /// Verify the Ed25519 signature using the given 32-byte Ed25519 public key.
-    ///
-    /// Signed data:
-    ///   destinationHash + sourceHash + canonicalPayload + hash
     public func verifySignature(ed25519PublicKey: Data) -> Bool {
         var signedPart = Data(capacity: destinationHash.count + sourceHash.count +
   canonicalMsgpackPayload.count + 32)
@@ -174,11 +151,6 @@ public struct LXMFMessage: Sendable {
         return Signature.verify(signedPart, signature: signature, publicKeyBytes: ed25519PublicKey)
     }
 
-    /// Validates the optional message stamp against a target cost.
-    ///
-    /// Python-compatible semantics:
-    /// - If `tickets` are supplied, ticket-derived stamp validation is attempted first.
-    /// - Otherwise a proof-of-work stamp is validated against `message_id` workblock.
     public func validateStamp(targetCost: Int, tickets: [Data]? = nil) -> (valid: Bool, value: Int?) {
         guard targetCost > 0 && targetCost < 255 else { return (false, nil) }
         guard let stamp else { return (false, nil) }
@@ -200,12 +172,6 @@ public struct LXMFMessage: Sendable {
         return (true, LXMFStamper.stampValue(workblock: workblock, stamp: stamp))
     }
 
-    // Outbound message creation
-
-    /// Create and sign a new LXMF message, producing packed wire bytes.
-    ///
-    /// If `stamp` is supplied, it is appended as payload element 5 while hash and
-    /// signature are computed over the unstamped canonical payload.
     public static func create(
         destinationHash: Data,
         sourceIdentity: Identity,
@@ -297,7 +263,44 @@ public struct LXMFMessage: Sendable {
         return packed
     }
 
-    // Internal helpers
+    /// Pack a message for paper (QR/URI) delivery.
+    /// Returns the raw bytes: destinationHash(16) + encrypt(rest of packed message).
+    /// The caller encrypts with the recipient's X25519 public key via ReticulumToken.
+    public static func packPaper(
+        destinationHash: Data,
+        sourceIdentity: Identity,
+        recipientX25519PublicKey: Data,
+        recipientIdentityHash: Data,
+        content: String,
+        title: String = "",
+        timestamp: Double = 0,
+        fields: [Int: Data] = [:]
+    ) throws -> Data {
+        let packed = try create(
+            destinationHash: destinationHash,
+            sourceIdentity: sourceIdentity,
+            content: content,
+            title: title,
+            timestamp: timestamp,
+            fields: fields
+        )
+        let payload = Data(packed[Destination.hashLength...])
+        let encrypted = try ReticulumToken.encrypt(
+            payload,
+            recipientX25519PublicKey: recipientX25519PublicKey,
+            identityHash: recipientIdentityHash
+        )
+        return Data(packed[..<Destination.hashLength]) + encrypted
+    }
+
+    /// Generate a paper message URI (`lxm://…`).
+    public static func paperURI(paperPacked: Data) -> String {
+        let encoded = paperPacked.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        return "lxm://\(encoded)"
+    }
 
     static func encodeCanonicalPayload(
         timestamp: Double,

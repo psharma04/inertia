@@ -3,18 +3,6 @@ import Foundation
 @testable import ReticulumRouting
 import ReticulumPackets
 
-// Routing Protocol Compatibility Tests
-//
-// Tests verify the Swift routing layer matches Reticulum routing semantics:
-//
-//   Path discovery  – receiving an announce populates the routing table
-//   Path caching    – better routes replace worse ones; worse routes are ignored
-//   Path expiration – stale routes are pruned; fresh routes survive
-//   Multi-hop       – announces are forwarded with incremented hop counts;
-//  data packets are forwarded to the correct next-hop interface
-//
-// All routing types (Path, RoutingTable, AnnounceManager, TransportManager,
-// NodeInterface) are stubs — tests FAIL until they are implemented.
 
 // Mock infrastructure
 

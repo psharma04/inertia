@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>chat.inertia.background-refresh</string>
+	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
@@ -18,12 +22,32 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>0.1</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>LXMF Paper Message</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>lxm</string>
+				<string>lxmf</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>NomadNet Page</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>nomadnet</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>Inertia uses Face ID to prevent other people from getting into your messages.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Inertia uses Local Network to talk to TCP servers on your LAN.</string>
+	<string>Inertia uses Face ID to lock and unlock access to your local data.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Inertia needs access to your photo library to select and share images.</string>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

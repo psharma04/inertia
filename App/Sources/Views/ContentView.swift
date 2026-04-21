@@ -9,19 +9,31 @@ struct ContentView: View {
             if model.shouldShowOnboarding {
                 OnboardingView()
             } else {
-                TabView {
-                    Tab("Messages", systemImage: "bubble.left.and.bubble.right") {
+                TabView(selection: Bindable(model).selectedTab) {
+                    Tab("Messages", systemImage: "bubble.left.and.bubble.right", value: .messages) {
                         ConversationsView()
                     }
-                    Tab("Peers", systemImage: "person.wave.2") {
+                    .accessibilityIdentifier("tab-messages")
+                    Tab("Peers", systemImage: "person.wave.2", value: .peers) {
                         PeersView()
                     }
-                    Tab("Nomad", systemImage: "safari") {
+                    .accessibilityIdentifier("tab-peers")
+                    Tab("Nomad", systemImage: "safari", value: .nomad) {
                         NomadBrowserView()
                     }
-                    Tab("Settings", systemImage: "gear") {
+                    .accessibilityIdentifier("tab-nomad")
+                    Tab("Settings", systemImage: "gear", value: .settings) {
                         SettingsView()
                     }
+                    .accessibilityIdentifier("tab-settings")
+                }
+                .alert("Deep Link Error", isPresented: Binding(
+                    get: { model.deepLinkError != nil },
+                    set: { if !$0 { model.deepLinkError = nil } }
+                )) {
+                    Button("OK") { model.deepLinkError = nil }
+                } message: {
+                    Text(model.deepLinkError ?? "")
                 }
             }
 
@@ -255,7 +267,7 @@ struct OnboardingView: View {
 
                 Text("Messages: send and receive LXMF")
                 Text("Peers: discovered destinations and metadata")
-                Text("Nomad: browse pages and files (NOT WORKING YET)")
+                Text("Nomad: browse pages, files, and interact with nodes")
                 Text("Settings: interfaces, announce, propagation, identity, diagnostics")
 
                 Divider().padding(.vertical, 4)
@@ -265,18 +277,20 @@ struct OnboardingView: View {
 
                 Text("Working now:")
                     .font(.subheadline.bold())
-                Text("• Opportunistic message delivery")
+                Text("• Opportunistic, direct, and propagated delivery")
                 Text("• Announce handling and route/path refresh")
                 Text("• Sent/delivered outbound markers")
+                Text("• AutoInterface (multicast peer discovery)")
+                Text("• Stamps and propagation node sync")
+                Text("• NomadNet page browsing and Micron rendering")
+                Text("• Image and file attachments")
 
                 Text("Not complete yet:")
                     .font(.subheadline.bold())
                     .padding(.top, 4)
-                Text("• Direct and propagation delivery")
-                Text("• NomadNet support and Micron rendering")
-                Text("• AutoInterface and RNodes")
-                Text("• Stamps and propagation messages")
-                Text("You can find the current status of these functions and other known missing features at")
+                Text("• RNode/serial interface support")
+                Text("• Reticulum Resource transfers (large NomadNet pages)")
+                Text("You can find the current status and known issues at")
                     .font(.subheadline.bold())
                     .padding(.top, 4)
                 Link("https://github.com/psharma04/Inertia", destination: URL(string: "https://github.com/psharma04/Inertia")!)
@@ -293,6 +307,7 @@ struct OnboardingView: View {
             if step > 0 {
                 Button("Back") { step = max(0, step - 1) }
                     .buttonStyle(.bordered)
+                    .accessibilityIdentifier("onboarding-back")
             }
 
             Spacer()
@@ -300,11 +315,13 @@ struct OnboardingView: View {
             if step < totalSteps - 1 {
                 Button("Next") { step = min(totalSteps - 1, step + 1) }
                     .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("onboarding-next")
             } else {
                 Button("Finish") {
                     model.completeOnboarding(nickname: nickname)
                 }
                 .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("onboarding-finish")
             }
         }
     }

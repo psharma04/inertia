@@ -1,0 +1,20 @@
+{
+  // Deploy target: Cloudflare Workers via @opennextjs/cloudflare
+  // Build:   bun run cf:build
+  // Preview: bun run cf:preview
+  // Deploy:  bun run deploy
+  "name": "inertia-web",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-04-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "vars": {
+    "NEXT_PUBLIC_SITE_URL": "https://inertia.chat"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

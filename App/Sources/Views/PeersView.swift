@@ -67,7 +67,7 @@ struct PeersView: View {
                 Button("Cancel", role: .cancel) { aliasPeer = nil }
             } message: {
                 if let peer = aliasPeer {
- let name = peer.displayName.map { "\"\($0)\"" } ?? peer.shortHash + "…"
+ let name = peer.displayName.map { "\"\($0)\"" } ?? "\(peer.shortHash)…"
  Text("Enter a custom alias for \(name). Leave blank to remove the alias.")
                 }
             }
@@ -81,6 +81,7 @@ struct PeersView: View {
                 .foregroundStyle(.secondary)
             Text("No Peers Yet")
                 .font(.title2.bold())
+                .accessibilityIdentifier("peers-empty-title")
             Text("Connect to a Reticulum node to start\ndiscovering peers via announce packets.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -126,7 +127,7 @@ private struct PeerRow: View {
          .foregroundStyle(.blue)
  }
                 }
-                Text(peer.shortHash + "…")
+                Text("\(peer.shortHash)…")
  .font(.system(.caption, design: .monospaced))
  .foregroundStyle(.secondary)
                 if let hops = peer.pathHops {

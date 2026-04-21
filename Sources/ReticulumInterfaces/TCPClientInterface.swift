@@ -1,20 +1,17 @@
 import Foundation
 import Darwin
+import os.log
 import ReticulumCrypto
 import ReticulumPackets
+
+private let tcpLog = OSLog(subsystem: "chat.inertia.app", category: "tcp-interface")
 
 private extension Data {
     /// Compact lowercase hex string for logging.
     var hex: String { map { String(format: "%02x", $0) }.joined() }
 }
 
-/// TCP client interface connecting to a Reticulum TCP server.
-///
-/// Connects using POSIX sockets, frames packets with HDLC, and automatically
-/// reconnects after a configurable delay when the connection drops.
-///
-/// Example: host: rns.inertia.chat, port: 4242
-public actor TCPClientInterface: ReticulumInterface {
+public actor TCPClientInterface: MessageTransportInterface {
     public let name: String
     public private(set) var isOnline: Bool = false
 
@@ -29,25 +26,11 @@ public actor TCPClientInterface: ReticulumInterface {
     private var stopped             = false
     private var reconnectTask:       Task<Void, Never>?
 
-    // Identity cache (populated from received announces)
-
-    /// Maps destination hash (16 bytes) → full 64-byte identity public key.
-    /// Used to encrypt outgoing DATA packets destined for SINGLE destinations.
     private var identityCache: [Data: Data] = [:]
-
-    /// Pending waiters for a public key that has not yet been received.
     private var publicKeyWaiters: [Data: [(id: UUID, cont: CheckedContinuation<Data?, Never>)]] = [:]
-
-    // Link state (populated during link establishment)
-
-    /// Active link state keyed by link_id (16 bytes).
     private var linkStates: [Data: Data] = [:]  // link_id → 64-byte derived key
-
-    /// Async signing callback — set by AppModel with identity's Ed25519 sign function.
-    /// Called to sign link data-packet proofs.
     private var linkSigner: (@Sendable (Data) async -> Data?)?
 
-    /// Registers the Ed25519 signing function used for sending link packet proofs.
     public func setLinkSigner(_ signer: @escaping @Sendable (Data) async -> Data?) {
         self.linkSigner = signer
     }
@@ -72,10 +55,6 @@ public actor TCPClientInterface: ReticulumInterface {
         case connectFailed(Int32)
         case notConnected
         case writeFailed
-        /// The recipient's public key is not in the identity cache.
-        /// This means no announce has been received for this destination and
-        /// the payload cannot be encrypted. Python's RNS layer drops all
-        /// unencrypted DATA packets to SINGLE destinations.
         case noPathToDestination
     }
 
@@ -91,12 +70,11 @@ public actor TCPClientInterface: ReticulumInterface {
         self.reconnectDelay = reconnectDelay
     }
 
-    /// Register a handler invoked with each inbound (HDLC-deframed) packet.
     public func setOnReceive(_ handler: @escaping @Sendable (Data) async -> Void) {
         onReceive = handler
     }
 
-    // ReticulumInterface
+    // MARK: - ReticulumInterface
 
     public func start() async throws {
         stopped = false
@@ -112,10 +90,6 @@ public actor TCPClientInterface: ReticulumInterface {
         closeSocket()
     }
 
-    /// Pre-populates the identity cache with a known destination→publicKey mapping.
-    ///
-    /// Call this after connecting for each persisted peer so that outbound
-    /// `send()` can encrypt immediately without waiting for a fresh announce.
     public func seedIdentityCache(destinationHash: Data, publicKey: Data) {
         if identityCache[destinationHash] == nil {
             identityCache[destinationHash] = publicKey
@@ -124,28 +98,19 @@ public actor TCPClientInterface: ReticulumInterface {
         resumeWaiters(destinationHash: destinationHash, publicKey: publicKey)
     }
 
-    /// Registers an active Reticulum link so that incoming link DATA packets
-    /// can be decrypted and forwarded to the `onReceive` handler.
-    ///
-    /// - Parameters:
-    ///   - linkId:     16-byte link identifier (SHA256 truncated hash of hashable LINKREQUEST).
-    ///   - derivedKey: 64-byte HKDF-derived key (signing_key[32] + encryption_key[32]).
     public func establishLink(linkId: Data, derivedKey: Data) {
         linkStates[linkId] = derivedKey
         print("[TCP/\(name)] Link registered id=\(linkId.hex.prefix(8))…")
     }
 
-    /// Returns the cached 64-byte identity public key for `destinationHash`, if known.
-    ///
-    /// The cache is populated from received ANNOUNCE packets and from
-    /// `seedIdentityCache(destinationHash:publicKey:)`.
+    public func removeLink(linkId: Data) {
+        linkStates.removeValue(forKey: linkId)
+    }
+
     public func identityPublicKey(for destinationHash: Data) -> Data? {
         identityCache[destinationHash]
     }
 
-    /// Waits up to `timeout` seconds for a public key for `destinationHash`.
-    ///
-    /// Returns immediately when the key is already cached.
     public func waitForIdentityPublicKey(destinationHash: Data, timeout: TimeInterval = 30) async -> Data? {
         await waitForPublicKey(destinationHash: destinationHash, timeout: timeout)
     }
@@ -159,6 +124,7 @@ public actor TCPClientInterface: ReticulumInterface {
             let actualDest: Data
             let effectivePayload: Data
             if isH2 {
+                guard packet.payload.count >= 16 else { return }
                 actualDest = Data([packet.header.context]) + packet.payload.prefix(15)
                 effectivePayload = Data(packet.payload.dropFirst(16))
             } else {
@@ -177,6 +143,10 @@ public actor TCPClientInterface: ReticulumInterface {
         let fd     = sockFd
         let queue  = sendQueue
         let framed = Self.hdlcFrame(data)
+        // Wire-level TX hex dump
+        let txHex = data.prefix(min(40, data.count)).map { String(format: "%02x", $0) }.joined(separator: " ")
+        os_log("RAW TCP TX %d bytes (framed %d): %{public}@%{public}@", log: OSLog(subsystem: "chat.inertia.tcp", category: "wire"), type: .default,
+               data.count, framed.count, txHex, data.count > 40 ? "…" : "")
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             queue.async {
                 var offset = 0
@@ -197,7 +167,7 @@ public actor TCPClientInterface: ReticulumInterface {
         }
     }
 
-    // Connection lifecycle
+    // MARK: - Connection Lifecycle
 
     private func connectOnce() async throws {
         guard !stopped else { throw TCPError.notConnected }
@@ -234,7 +204,7 @@ public actor TCPClientInterface: ReticulumInterface {
         if fd >= 0 { _ = Darwin.close(fd) }
     }
 
-    // Receive loop
+    // MARK: - Receive Loop
 
     private func startReceiving(fd: Int32) {
         receiveQueue.async { [weak self] in
@@ -256,6 +226,16 @@ public actor TCPClientInterface: ReticulumInterface {
                 }
                 let data = Data(buf[0..<n])
                 guard let self else { return }
+                // Raw TCP hex dump for wire-level diagnostics
+                let hexSnippet = data.prefix(min(40, data.count)).map { String(format: "%02x", $0) }.joined(separator: " ")
+                os_log("RAW TCP RX %d bytes: %{public}@%{public}@", log: OSLog(subsystem: "chat.inertia.tcp", category: "wire"), type: .default,
+                       n, hexSnippet, n > 40 ? "…" : "")
+                // Check for LRPROOF flag pattern (0x0F after HDLC flag 0x7E)
+                for i in 0..<(n-1) {
+                    if buf[i] == 0x7E && buf[i+1] == 0x0F {
+                        os_log("⚡ RAW TCP: possible LRPROOF at offset %d (0x7E 0x0F)", log: OSLog(subsystem: "chat.inertia.tcp", category: "wire"), type: .default, i)
+                    }
+                }
                 // Preserve strict receive ordering. Chaining each chunk behind the
                 // previous processing task prevents actor-message reordering under load.
                 let previousTask = deliveryTask
@@ -282,8 +262,10 @@ public actor TCPClientInterface: ReticulumInterface {
         receiveBuffer.append(data)
         while let (packet, rest) = Self.hdlcDeframe(receiveBuffer) {
             receiveBuffer = rest
+            os_log("HDLC deframed %d bytes, flags=0x%02X", log: tcpLog, type: .default, packet.count, packet.first ?? 0)
             // For HEADER_2 packets, reconstruct destination from context + payload prefix.
             guard let parsed = try? Packet.deserialize(from: packet) else {
+                os_log("⚠️ Packet.deserialize FAILED on %d bytes: %{public}@", log: tcpLog, type: .error, packet.count, packet.prefix(min(40, packet.count)).hex)
                 if let handler = onReceive {
  Task { await handler(packet) }
                 }
@@ -294,6 +276,10 @@ public actor TCPClientInterface: ReticulumInterface {
             let destHash: Data
             let effectivePayload: Data
             if isH2 {
+                guard parsed.payload.count >= 16 else {
+                    os_log("H2 payload too short (%d bytes), dropping", log: tcpLog, type: .error, parsed.payload.count)
+                    continue
+                }
                 destHash        = Data([parsed.header.context]) + parsed.payload.prefix(15)
                 effectivePayload = Data(parsed.payload.dropFirst(16))
             } else {
@@ -301,6 +287,9 @@ public actor TCPClientInterface: ReticulumInterface {
                 effectivePayload = parsed.payload
             }
             let headerHex = String(packet.prefix(min(PacketHeader.serializedLength, packet.count)).hex.prefix(38))
+            os_log("RX pktType=%d destType=%d H%{public}@ dest=%{public}@ ctx=0x%02X %dB", log: tcpLog, type: .default,
+                   parsed.header.packetType.rawValue, parsed.header.destinationType.rawValue,
+                   isH2 ? "2" : "1", destHash.hex.prefix(8).description, parsed.header.context, effectivePayload.count)
             print(
                 "[TCP/\(name)] RX \(parsed.header.packetType) H\(isH2 ? "2" : "1") " +
                 "destType=\(parsed.header.destinationType) hops=\(parsed.header.hops) ctx=\(String(format: "0x%02X", parsed.header.context)) " +
@@ -322,11 +311,13 @@ public actor TCPClientInterface: ReticulumInterface {
                 if isH2 {
  context = parsed.payload.count > 15
      ? parsed.payload[parsed.payload.startIndex + 15]
-     : 0
+     : parsed.header.context
                 } else {
  context = parsed.header.context
                 }
                 let linkData = effectivePayload
+                os_log("RX LINK pkt id=%{public}@ ctx=0x%02X %dB keys=%d", log: tcpLog, type: .default,
+                       destHash.hex.prefix(8).description, context, linkData.count, linkStates.count)
 
                 if context == 0xFE {
  print("[TCP/\(name)] RX LINK RTT id=\(destHash.hex.prefix(8))… (ignored)")
@@ -334,10 +325,24 @@ public actor TCPClientInterface: ReticulumInterface {
  print("[TCP/\(name)] RX LINK KEEPALIVE id=\(destHash.hex.prefix(8))… (ignored)")
                 } else if let derivedKey = linkStates[destHash] {
  if let plaintext = try? ReticulumToken.decryptLinkData(linkData, key: derivedKey) {
+     os_log("LINK DECRYPT OK id=%{public}@ ctx=0x%02X → %dB", log: tcpLog, type: .default,
+            destHash.hex.prefix(8).description, context, plaintext.count)
      print(
          "[TCP/\(name)] RX LINK DATA id=\(destHash.hex.prefix(8))… " +
          "ctx=\(String(format: "0x%02X", context)) → \(plaintext.count)B plaintext"
      )
+
+     // For REQUEST context (0x09), compute on-wire request_id and prepend to payload.
+     // The server-side request handler needs this to echo it in the response.
+     var syntheticPayload = plaintext
+     if context == 0x09 {
+         let flags = packet[packet.startIndex]
+         var hashablePart = Data([flags & 0x0F])
+         hashablePart.append(packet[(packet.startIndex + 2)...])
+         let requestID = Hashing.truncatedHash(hashablePart, length: 16)
+         syntheticPayload = requestID + plaintext
+     }
+
      let syntheticHeader = PacketHeader(
          packetType:      .data,
          destinationType: .link,
@@ -345,7 +350,7 @@ public actor TCPClientInterface: ReticulumInterface {
          hops:            0,
          context:         context
      )
-     let syntheticPacket = Packet(header: syntheticHeader, payload: plaintext)
+     let syntheticPacket = Packet(header: syntheticHeader, payload: syntheticPayload)
      let syntheticRaw    = syntheticPacket.serialize()
      if let handler = onReceive {
          Task { await handler(syntheticRaw) }
@@ -382,7 +387,7 @@ public actor TCPClientInterface: ReticulumInterface {
         }
     }
 
-    // Identity cache helpers
+    // MARK: - Identity Cache
 
     private func storeIdentity(destinationHash: Data, publicKey: Data) {
         identityCache[destinationHash] = publicKey
@@ -404,7 +409,7 @@ public actor TCPClientInterface: ReticulumInterface {
         cont.resume(returning: nil)
     }
 
-    // Link proof
+    // MARK: - Link Proof
 
     /// Sends explicit LINK proof: `full_hash(32) + signature(64)`.
     private func sendLinkProof(for rawPacket: Data, isHeader2: Bool, linkId: Data) {
@@ -415,12 +420,9 @@ public actor TCPClientInterface: ReticulumInterface {
         guard !rawPacket.isEmpty else { return }
 
         let flags = rawPacket[rawPacket.startIndex]
-        let hashablePart: Data
-        if isHeader2 {
-            hashablePart = Data([flags & 0x0F]) + rawPacket.dropFirst(18)
-        } else {
-            hashablePart = Data([flags & 0x0F]) + rawPacket.dropFirst(2)
-        }
+        // Python: hashable_part = bytes([raw[0] & 0x0F]) + raw[2:]
+        // Always skip only the hops byte (index 1) for both H1 and H2.
+        let hashablePart = Data([flags & 0x0F]) + rawPacket.dropFirst(2)
         let fullHash = Hashing.sha256(hashablePart)
 
         let ifaceName  = name
@@ -463,12 +465,9 @@ public actor TCPClientInterface: ReticulumInterface {
         guard !rawPacket.isEmpty else { return }
 
         let flags = rawPacket[rawPacket.startIndex]
-        let hashablePart: Data
-        if isHeader2 {
-            hashablePart = Data([flags & 0x0F]) + rawPacket.dropFirst(18)
-        } else {
-            hashablePart = Data([flags & 0x0F]) + rawPacket.dropFirst(2)
-        }
+        // Python: hashable_part = bytes([raw[0] & 0x0F]) + raw[2:]
+        // Always skip only the hops byte for both H1 and H2.
+        let hashablePart = Data([flags & 0x0F]) + rawPacket.dropFirst(2)
         let fullHash      = Hashing.sha256(hashablePart)
         let truncatedHash = Data(fullHash.prefix(16))
 
@@ -535,7 +534,7 @@ public actor TCPClientInterface: ReticulumInterface {
         }
     }
 
-    // Reconnection
+    // MARK: - Reconnection
 
     private func scheduleReconnect() {
         guard !stopped else { return }
@@ -558,7 +557,7 @@ public actor TCPClientInterface: ReticulumInterface {
         }
     }
 
-    // HDLC framing
+    // MARK: - HDLC Framing
 
     private static func hdlcFrame(_ data: Data) -> Data {
         var out = Data([hdlcFLAG])
@@ -597,7 +596,7 @@ public actor TCPClientInterface: ReticulumInterface {
         return (payload, Data(bytes[(end + 1)...]))
     }
 
-    // POSIX connection helper
+    // MARK: - POSIX Connection
 
     /// Synchronously opens a TCP socket to `host:port` using `getaddrinfo` for
     /// hostname resolution (handles both IP literals and DNS names).

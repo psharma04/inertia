@@ -24,6 +24,16 @@ struct SettingsView: View {
          serverSummary
      }
  }
+ .accessibilityIdentifier("settings-servers")
+
+ NavigationLink(destination: AutoInterfaceSettingsView()) {
+     HStack {
+         Label("AutoInterface", systemImage: "wifi")
+         Spacer()
+         autoInterfaceSummary
+     }
+ }
+ .accessibilityIdentifier("settings-autointerface")
                 } header: {
  Text("Reticulum Network")
                 }
@@ -57,6 +67,23 @@ struct SettingsView: View {
      Label("Announce Now", systemImage: "megaphone")
  }
  .disabled(!model.isAnyConnected)
+ .accessibilityIdentifier("announce-now")
+
+ Button {
+     model.syncPropagationInboxNow()
+ } label: {
+     if model.isSyncingPropagation {
+         HStack {
+             ProgressView()
+                 .controlSize(.small)
+             Text("Syncing…")
+         }
+     } else {
+         Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+     }
+ }
+ .disabled(!model.isAnyConnected || model.isSyncingPropagation)
+ .accessibilityIdentifier("sync-now")
                 } header: {
  Text("Announce")
                 } footer: {
@@ -79,6 +106,7 @@ struct SettingsView: View {
  NavigationLink(destination: IdentityView()) {
       Label("Identity & Address", systemImage: "key.horizontal")
   }
+  .accessibilityIdentifier("settings-identity")
                 } header: {
   Text("Cryptographic Identity")
                 } footer: {
@@ -90,6 +118,7 @@ struct SettingsView: View {
                     NavigationLink(destination: MessagingDeliverySettingsView()) {
                         Label("Messaging & Propagation", systemImage: "tray.and.arrow.up")
                     }
+                    .accessibilityIdentifier("settings-messaging")
                 } header: {
                     Text("Messaging")
                 } footer: {
@@ -137,6 +166,7 @@ struct SettingsView: View {
  NavigationLink(destination: NetworkStatusView()) {
      Label("Network Status", systemImage: "network")
  }
+ .accessibilityIdentifier("settings-network-status")
                 } header: {
  Text("Diagnostics")
                 }
@@ -189,6 +219,30 @@ struct SettingsView: View {
         }
     }
 
+    @ViewBuilder
+    private var autoInterfaceSummary: some View {
+        if !model.autoInterfaceConfig.enabled {
+            Text("Disabled")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        } else {
+            switch model.autoInterfaceOnline {
+            case true:
+                Text("Online")
+                    .font(.callout)
+                    .foregroundStyle(.green)
+            case false:
+                Text("Error")
+                    .font(.callout)
+                    .foregroundStyle(.red)
+            default:
+                Text("Starting…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
 }
 
 private struct MessagingDeliverySettingsView: View {
@@ -229,7 +283,7 @@ private struct MessagingDeliverySettingsView: View {
                             } label: {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(peer.effectiveName)
-                                    Text(peer.shortHash + "…")
+                                    Text("\(peer.shortHash)…")
                                         .font(.system(.caption, design: .monospaced))
                                         .foregroundStyle(.secondary)
                                     if peer.announcedPropagationEnabled == false {
@@ -257,7 +311,7 @@ private struct MessagingDeliverySettingsView: View {
                 LabeledContent("Active Node") {
                     VStack(alignment: .trailing, spacing: 2) {
                         Text(model.selectedPropagationNode?.effectiveName ?? "Custom Propagation Node")
-                        Text(model.selectedPropagationNodeHashHex + "…")
+                        Text("\(model.selectedPropagationNodeHashHex)…")
                             .font(.system(.caption, design: .monospaced))
                             .foregroundStyle(.secondary)
                         if model.autoSelectBestPropagationNode {
@@ -290,6 +344,34 @@ private struct MessagingDeliverySettingsView: View {
                 Text("Propagation Nodes")
             } footer: {
                 Text("Only one propagation node is active at a time. With auto-select enabled, Inertia periodically picks the best announced and reachable node (preferring fewer hops).")
+            }
+
+            Section {
+                @Bindable var m = model
+
+                Toggle("Host Propagation Node", isOn: $m.propagationNodeEnabled)
+
+                if model.propagationNodeEnabled {
+                    TextField("Node Name", text: $m.propagationNodeName)
+                        .autocorrectionDisabled()
+
+                    LabeledContent("Storage Limit") {
+                        Stepper("\(model.propagationStorageLimitMB) MB", value: $m.propagationStorageLimitMB, in: 1...500)
+                    }
+
+                    LabeledContent("Storage Used") {
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(model.propagationStorageUsedBytes), countStyle: .file))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    LabeledContent("Stamp Cost") {
+                        Stepper("\(model.propagationNodeStampCost)", value: $m.propagationNodeStampCost, in: 0...254)
+                    }
+                }
+            } header: {
+                Text("Propagation Node Hosting")
+            } footer: {
+                Text("Host a propagation node on this device to store and relay messages for other users. Only active while the app is in the foreground.")
             }
         }
         .navigationTitle("Messaging & Propagation")

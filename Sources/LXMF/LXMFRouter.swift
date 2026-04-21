@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import ReticulumCrypto
+import os.log
 
 /// Routes LXMF messages using opportunistic, direct, or propagated delivery.
 public actor LXMFRouter {
@@ -46,6 +47,12 @@ public actor LXMFRouter {
         public let destinationHash: Data
         public let linkID: Data
         public let derivedKey: Data
+
+        public init(destinationHash: Data, linkID: Data, derivedKey: Data) {
+            self.destinationHash = destinationHash
+            self.linkID = linkID
+            self.derivedKey = derivedKey
+        }
     }
 
     public struct PropagatedOutbound: Sendable {
@@ -116,10 +123,6 @@ public actor LXMFRouter {
 
     // DIRECT
 
-    /// Creates a Reticulum LINKREQUEST payload and stores local request state.
-    ///
-    /// The returned payload is:
-    ///   `requester_x25519_pub(32) + requester_ed25519_pub(32) + signalling(3)`
     public func createDirectLinkRequest(
         destinationHash: Data,
         mtu: Int = 500,
@@ -155,52 +158,66 @@ public actor LXMFRouter {
         )
     }
 
-    /// Validates an LRPROOF payload and establishes a direct link state.
-    ///
-    /// LRPROOF payload format:
-    ///   `signature(64) + responder_x25519_pub(32) + signalling(3)`
     public func completeDirectLink(
         linkID: Data,
         proofPayload: Data,
         recipientIdentityPublicKey: Data
     ) throws -> DirectLinkState {
+        let lxmfLog = OSLog(subsystem: "chat.inertia.app", category: "lxmfrouter")
+        os_log("CDL step 1: ENTER link=%{public}@", log: lxmfLog, type: .default, linkID.prefix(4).map { String(format: "%02x", $0) }.joined())
         try Self.validateIdentityPublicKey(recipientIdentityPublicKey)
+        os_log("CDL step 2: identity ok", log: lxmfLog, type: .default)
 
         guard proofPayload.count == 99 else {
+            os_log("CDL FAIL: proof len=%d", log: lxmfLog, type: .default, proofPayload.count)
             throw RouterError.invalidLinkProofLength(proofPayload.count)
         }
+        os_log("CDL step 3: proof len ok", log: lxmfLog, type: .default)
 
         guard let pending = pendingDirectRequests.removeValue(forKey: linkID) else {
+            os_log("CDL FAIL: no pending for link", log: lxmfLog, type: .default)
             throw RouterError.missingDirectRequest
         }
+        os_log("CDL step 4: pending found", log: lxmfLog, type: .default)
 
         let signature = Data(proofPayload.prefix(64))
         let responderX25519Pub = Data(proofPayload[64..<96])
         let proofSignalling = Data(proofPayload[96..<99])
-        guard proofSignalling == pending.signalling else {
+        // Python only checks that mode matches, not full signalling equality.
+        // Transport nodes may clamp MTU, so the signalling bytes can differ.
+        let proofMode = proofSignalling[proofSignalling.startIndex]
+        let pendingMode = pending.signalling[pending.signalling.startIndex]
+        guard proofMode == pendingMode else {
+            os_log("CDL FAIL: mode mismatch proof=%d pending=%d", log: lxmfLog, type: .default, proofMode, pendingMode)
             throw RouterError.invalidLinkProofSignalling
         }
+        os_log("CDL step 5: mode ok", log: lxmfLog, type: .default)
 
         let recipientEd25519Pub = Data(recipientIdentityPublicKey[32..<64])
+        // Use the PROOF's signalling in signed data (not ours), matching Python's validate_proof
         var signedData = Data()
         signedData.append(linkID)
         signedData.append(responderX25519Pub)
         signedData.append(recipientEd25519Pub)
         signedData.append(proofSignalling)
+        os_log("CDL step 6: signed data built", log: lxmfLog, type: .default)
 
         guard Signature.verify(
             signedData,
             signature: signature,
             publicKeyBytes: recipientEd25519Pub
         ) else {
+            os_log("CDL FAIL: sig verify failed", log: lxmfLog, type: .default)
             throw RouterError.invalidLinkProofSignature
         }
+        os_log("CDL step 7: sig ok", log: lxmfLog, type: .default)
 
         let derivedKey = try Self.deriveDirectKey(
             requesterX25519PrivateKey: pending.requesterX25519PrivateKey,
             responderX25519PublicKey: responderX25519Pub,
             linkID: linkID
         )
+        os_log("CDL step 8: key derived", log: lxmfLog, type: .default)
 
         let linkState = DirectLinkState(
             destinationHash: pending.destinationHash,
@@ -208,6 +225,7 @@ public actor LXMFRouter {
             derivedKey: derivedKey
         )
         directLinksByDestination[pending.destinationHash] = linkState
+        os_log("CDL step 9: DONE", log: lxmfLog, type: .default)
         return linkState
     }
 
@@ -217,6 +235,10 @@ public actor LXMFRouter {
 
     public func removeDirectLink(for destinationHash: Data) {
         directLinksByDestination.removeValue(forKey: destinationHash)
+    }
+
+    public func removeDirectLinkByLinkID(_ linkID: Data) {
+        directLinksByDestination = directLinksByDestination.filter { $0.value.linkID != linkID }
     }
 
     public func encryptDirectPayload(
@@ -388,18 +410,18 @@ public actor LXMFRouter {
         return Data(be.dropFirst(1))
     }
 
-    /// Computes link_id from LINKREQUEST hashable bytes (without signalling bytes).
     private static func computeLinkID(
         destinationHash: Data,
         context: UInt8,
         requesterX25519PublicKey: Data,
         requesterEd25519PublicKey: Data
     ) -> Data {
-        var hashable = Data([0x02]) // packet_type nibble for LINKREQUEST
+        var hashable = Data([0x02]) // (destinationType=SINGLE << 2) | packetType=LINKREQUEST
         hashable.append(destinationHash)
         hashable.append(context)
         hashable.append(requesterX25519PublicKey)
         hashable.append(requesterEd25519PublicKey)
+        // Single SHA256 truncated to 16 bytes — matches Python's Identity.truncated_hash()
         return Hashing.truncatedHash(hashable, length: 16)
     }
 

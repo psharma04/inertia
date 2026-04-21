@@ -10,14 +10,16 @@ public enum MicronAlignment: String, Sendable, Equatable {
 }
 
 public enum MicronColor: Sendable, Equatable {
-    case rgb(String)      // 3-digit hex, e.g. "0af"
-    case grayscale(UInt8) // 00...99
+    case rgb(String)          // 3-digit hex, e.g. "0af"
+    case extendedRgb(String)  // 6-digit hex, e.g. "00aaff"
+    case grayscale(UInt8)     // 00...99
 }
 
 public struct MicronTextStyle: Sendable, Equatable {
     public var bold: Bool
     public var italic: Bool
     public var underline: Bool
+    public var strikethrough: Bool
     public var foreground: MicronColor?
     public var background: MicronColor?
 
@@ -25,12 +27,14 @@ public struct MicronTextStyle: Sendable, Equatable {
         bold: Bool = false,
         italic: Bool = false,
         underline: Bool = false,
+        strikethrough: Bool = false,
         foreground: MicronColor? = nil,
         background: MicronColor? = nil
     ) {
         self.bold = bold
         self.italic = italic
         self.underline = underline
+        self.strikethrough = strikethrough
         self.foreground = foreground
         self.background = background
     }
@@ -73,6 +77,22 @@ public enum MicronInline: Sendable, Equatable {
     case text(String, style: MicronTextStyle)
     case link(MicronLink, style: MicronTextStyle)
     case field(MicronField, style: MicronTextStyle)
+
+    public var text: String {
+        switch self {
+        case let .text(value, _): return value
+        case let .link(link, _): return link.label.isEmpty ? link.destination : link.label
+        case let .field(field, _): return field.name
+        }
+    }
+
+    public var style: MicronTextStyle {
+        switch self {
+        case let .text(_, style): return style
+        case let .link(_, style): return style
+        case let .field(_, style): return style
+        }
+    }
 }
 
 public struct MicronLine: Sendable, Equatable {
@@ -126,6 +146,14 @@ public struct MicronDocument: Sendable, Equatable {
                 String(repeating: String(character), count: 32)
             }
         }.joined(separator: "\n")
+    }
+
+    /// Cache TTL in seconds from `#!c=N` metadata directive, or nil for default.
+    public var cacheTTL: TimeInterval? {
+        guard let value = metadata["c"], let seconds = TimeInterval(value), seconds >= 0 else {
+            return nil
+        }
+        return seconds
     }
 }
 
@@ -204,6 +232,7 @@ public enum MicronParser {
             style.bold = false
             style.italic = false
             style.underline = false
+            style.strikethrough = false
             style.foreground = nil
             style.background = nil
         }
@@ -267,8 +296,14 @@ public enum MicronParser {
                 continue
             }
 
-            guard current == "`", index + 1 < chars.count else {
+            guard current == "`" else {
                 buffer.append(current)
+                index += 1
+                continue
+            }
+
+            // Lone trailing backtick with no command character – drop it.
+            guard index + 1 < chars.count else {
                 index += 1
                 continue
             }
@@ -288,6 +323,11 @@ public enum MicronParser {
             case "_":
                 flushBuffer()
                 state.style.underline.toggle()
+                index += 2
+
+            case "~":
+                flushBuffer()
+                state.style.strikethrough.toggle()
                 index += 2
 
             case "`":
@@ -320,23 +360,33 @@ public enum MicronParser {
                 index += 2
 
             case "F":
-                if let (triplet, next) = parseHexTriplet(chars: chars, start: index + 2) {
- flushBuffer()
- state.style.foreground = .rgb(triplet)
- index = next
+                if index + 2 < chars.count, chars[index + 2] == "T",
+                   let (hex6, next) = parseExtendedHex(chars: chars, start: index + 3) {
+                    flushBuffer()
+                    state.style.foreground = .extendedRgb(hex6)
+                    index = next
+                } else if let (triplet, next) = parseHexTriplet(chars: chars, start: index + 2) {
+                    flushBuffer()
+                    state.style.foreground = .rgb(triplet)
+                    index = next
                 } else {
- buffer.append("`")
- index += 1
+                    buffer.append("`")
+                    index += 1
                 }
 
             case "B":
-                if let (triplet, next) = parseHexTriplet(chars: chars, start: index + 2) {
- flushBuffer()
- state.style.background = .rgb(triplet)
- index = next
+                if index + 2 < chars.count, chars[index + 2] == "T",
+                   let (hex6, next) = parseExtendedHex(chars: chars, start: index + 3) {
+                    flushBuffer()
+                    state.style.background = .extendedRgb(hex6)
+                    index = next
+                } else if let (triplet, next) = parseHexTriplet(chars: chars, start: index + 2) {
+                    flushBuffer()
+                    state.style.background = .rgb(triplet)
+                    index = next
                 } else {
- buffer.append("`")
- index += 1
+                    buffer.append("`")
+                    index += 1
                 }
 
             case "g":
@@ -402,6 +452,13 @@ public enum MicronParser {
         let triplet = String(chars[start ... start + 2]).lowercased()
         guard triplet.count == 3, triplet.allSatisfy({ $0.hexDigitValue != nil }) else { return nil }
         return (triplet, start + 3)
+    }
+
+    private static func parseExtendedHex(chars: [Character], start: Int) -> (String, Int)? {
+        guard start + 5 < chars.count else { return nil }
+        let hex6 = String(chars[start ... start + 5]).lowercased()
+        guard hex6.count == 6, hex6.allSatisfy({ $0.hexDigitValue != nil }) else { return nil }
+        return (hex6, start + 6)
     }
 
     private static func parseGrayscale(chars: [Character], start: Int) -> (UInt8, Int)? {

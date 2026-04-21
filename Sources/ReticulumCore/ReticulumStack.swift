@@ -1,11 +1,4 @@
-import Foundation
-
-/// Entry point for the Reticulum Core stack.
-///
-/// Composes ReticulumCrypto, ReticulumPackets, ReticulumRouting, and ReticulumInterfaces.
-public actor ReticulumStack {
-    // TODO: Implement stack initialisation
-    // TODO: Implement identity management
-    // TODO: Implement destination registration
-    // TODO: Implement start() / stop() lifecycle
-}
+@_exported import ReticulumCrypto
+@_exported import ReticulumPackets
+@_exported import ReticulumRouting
+@_exported import ReticulumInterfaces

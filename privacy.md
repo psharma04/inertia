@@ -4,10 +4,10 @@
 
 This Privacy Policy applies to:
 
-- the **Inertia for iOS** application (the “App”), and
-- the default public Reticulum server `rns.inertia.chat:4242` (the “Default Server”),
+- the **Inertia for iOS** application (the "App"), and
+- the default public Reticulum server `rns.inertia.chat:4242` (the "Default Server"),
 
-operated by the Inertia project maintainers (“we”, “us”, “our”).
+operated by the Inertia project maintainers ("we", "us", "our").
 
 Contact: `privacy@inertia.chat`
 
@@ -60,7 +60,7 @@ This can include, for example:
 - diagnostic and crash data handled by Apple,
 - device and usage analytics shared by Apple.
 
-If you enable Apple’s “Share with App Developers” or related analytics settings, Apple may provide us with analytics and crash information through App Store Connect/Xcode tools (typically aggregated and/or pseudonymised, but sometimes including technical crash metadata such as device model, OS version, and timestamp).
+If you enable Apple’s "Share with App Developers" or related analytics settings, Apple may provide us with analytics and crash information through App Store Connect/Xcode tools (typically aggregated and/or pseudonymised, but sometimes including technical crash metadata such as device model, OS version, and timestamp).
 
 We do not control Apple’s processing practices.
 
@@ -153,11 +153,11 @@ You can stop App data processing by uninstalling the App and deleting local app 
 
 You can stop Default Server processing by removing/disabling `rns.inertia.chat` in the App server settings and disconnecting.
 
-For Apple analytics/crash sharing, you can opt out through Apple settings (for example, Analytics & Improvements settings, including “Share with App Developers”) and by not using TestFlight builds.
+For Apple analytics/crash sharing, you can opt out through Apple settings (for example, Analytics & Improvements settings, including "Share with App Developers") and by not using TestFlight builds.
 
 ## 13. Changes to this policy
 
-We may update this policy from time to time. The “Effective date” above reflects the latest version.
+We may update this policy from time to time. The "Effective date" above reflects the latest version.
 
 ## 15. Contact
 

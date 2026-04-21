@@ -80,7 +80,7 @@ private struct ContactRow: View {
                             .foregroundStyle(.blue)
                     }
                 }
-                Text(peer.shortHash + "…")
+                Text("\(peer.shortHash)…")
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
@@ -282,6 +282,34 @@ struct ContactDetailsView: View {
             Text("Send this user a message")
         } footer: {
             Text("Delivery method is selected automatically (direct, opportunistic, or propagated) based on current route availability.")
+        }
+
+        Section("Actions") {
+            Button {
+                if model.isPinned(destinationHash) {
+                    model.unpinConversation(hash: destinationHash)
+                } else {
+                    model.pinConversation(hash: destinationHash)
+                }
+            } label: {
+                Label(
+                    model.isPinned(destinationHash) ? "Unpin Conversation" : "Pin Conversation",
+                    systemImage: model.isPinned(destinationHash) ? "pin.slash" : "pin"
+                )
+            }
+
+            Button(role: model.isBlocked(destinationHash) ? nil : .destructive) {
+                if model.isBlocked(destinationHash) {
+                    model.unblockContact(hash: destinationHash)
+                } else {
+                    model.blockContact(hash: destinationHash)
+                }
+            } label: {
+                Label(
+                    model.isBlocked(destinationHash) ? "Unblock Contact" : "Block Contact",
+                    systemImage: model.isBlocked(destinationHash) ? "hand.raised.slash" : "hand.raised"
+                )
+            }
         }
     }
 

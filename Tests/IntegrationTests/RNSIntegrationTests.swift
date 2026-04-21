@@ -5,28 +5,6 @@ import Foundation
 @testable import ReticulumInterfaces
 @testable import LXMF
 
-// RNS Integration Tests
-//
-// End-to-end tests connecting a live Swift Reticulum stack to a real Python
-// Reticulum node (rns >= 1.1.3, lxmf >= 0.9.4) via TCPClientInterface.
-//
-// Failing tests and what they require:
-//
-//   Suite 1 — Announce Reception
-//     ✅ Passes once Python node is reachable and TCPClientInterface connects.
-//     ✅ All tests in this suite should pass with the current implementation.
-//
-//   Suite 2 — LXMF Message Delivery
-//     ❌ generatesLocalIdentity    → Identity.generate() not yet implemented
-//     ❌ createsSignedMessage       → LXMFMessage.create() not yet implemented
-//     ❌ sendsLXMFMessageOpportunistic → depends on both of the above
-//     ❌ pythonNodeReceivesMessage  → placeholder for bidirectional messaging
-//
-// Run with:
-//   swift test --filter IntegrationTests
-//
-// Requires Python 3.
-// RNS/LXMF dependencies are auto-bootstrapped by IntegrationTests.
 
 // Suite 1: Announce Reception
 
@@ -168,14 +146,6 @@ struct AnnounceReceptionTests {
 
 // Suite 2: LXMF Message Delivery
 
-/// Verifies that the Swift stack can create, sign, and deliver an LXMF message
-/// to a live Python Reticulum node using opportunistic (DATA-packet) delivery.
-///
-/// All tests in this suite initially FAIL because:
-///   - `Identity.generate()` is not yet implemented (throws `.keyDerivationFailed`)
-///   - `LXMFMessage.create()` is not yet implemented (throws `.notImplemented`)
-///
-/// They will pass once the LXMF creation pipeline is complete.
 @Suite("RNS Integration — LXMF Message Delivery")
 struct LXMFDeliveryTests {
 
@@ -194,9 +164,6 @@ struct LXMFDeliveryTests {
                 "Generated identity must hold a private key seed for signing")
     }
 
-    /// Verifies that a freshly created LXMF message round-trips correctly:
-    /// pack → parse → verify signature.  FAILS until both `Identity.generate()`
-    /// and `LXMFMessage.create()` are implemented.
     @Test("Swift creates and signs an LXMF message (round-trip)")
     func createsSignedMessage() throws {
         // FAILS: Identity.generate() is not yet implemented
@@ -234,9 +201,6 @@ struct LXMFDeliveryTests {
         )
     }
 
-    /// Placeholder for bidirectional messaging (Python → Swift).
-    ///
-    /// Disabled until inbound router callbacks are fully wired.
     @Test("Python RNS node sends LXMF message to Swift (placeholder)", .disabled("Pending inbound router wiring"))
     func pythonNodeSendsMessage() async throws {
         // Intentionally disabled.

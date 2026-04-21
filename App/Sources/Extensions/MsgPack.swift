@@ -1,16 +1,6 @@
 import Foundation
 import ReticulumCrypto
 
-/// Minimal msgpack encoder/decoder for the LXMF announce app_data format.
-///
-/// LXMF encodes announce metadata as `umsgpack.packb({field_id: value, ...})`.
-/// We only need to handle a fixmap of int keys → string values.
-///
-/// Relevant msgpack type prefixes:
-/// - `0x80…0x8F`  fixmap  (up to 15 entries)
-/// - `0x00…0x7F`  positive fixint
-/// - `0xA0…0xBF`  fixstr  (0–31 bytes)
-/// - `0xD9`        str8    (8-bit length prefix, up to 255 bytes)
 enum MsgPack {
 
     /// LXMF announce app_data field IDs.
@@ -21,35 +11,27 @@ enum MsgPack {
 
     // Encode
 
-    /// Encodes delivery announce app_data as:
-    /// `msgpack([display_name_bytes, stamp_cost])`.
-    ///
-    /// `stamp_cost` is encoded as `nil` when absent/disabled.
-    static func encodeDeliveryAnnounce(displayName: String, stampCost: Int?) -> Data {
-        var out = Data([0x92]) // fixarray(2)
+    static func encodeDeliveryAnnounce(displayName: String, stampCost: Int?, propagationNodeHash: Data? = nil) -> Data {
+        let hasNode = propagationNodeHash != nil && propagationNodeHash!.count == 16
+        var out = Data([hasNode ? 0x93 : 0x92]) // fixarray(3) or fixarray(2)
         out.append(encodeBinary(Data(displayName.utf8)))
         if let stampCost, stampCost > 0, stampCost < 255 {
             out.append(encodeInteger(stampCost))
         } else {
             out.append(0xC0) // nil
         }
+        if hasNode {
+            out.append(encodeBinary(propagationNodeHash!))
+        }
         return out
     }
 
-    /// Encodes announce app_data in Python LXMF 0.5.0+ style:
-    /// `msgpack([display_name_bytes])`.
-    ///
-    /// This is the format used by Sideband/Reticulum clients for outbound
-    /// `lxmf.delivery` announces.
     static func encodeDisplayNameList(_ displayName: String) -> Data {
         var out = Data([0x91]) // fixarray(1), legacy compatibility
         out.append(encodeBinary(Data(displayName.utf8)))
         return out
     }
 
-    /// Encodes `fields` as a msgpack fixmap `{Int: String}`.
-    ///
-    /// Only handles maps with ≤ 15 entries and string values ≤ 255 UTF-8 bytes.
     static func encode(_ fields: [Int: String]) -> Data {
         var out = Data()
         let count = min(fields.count, 15)
@@ -73,10 +55,6 @@ enum MsgPack {
 
     // Decode
 
-    /// Decodes a msgpack fixmap `{Int: String}` from `data`.
-    ///
-    /// Returns `nil` if the bytes do not start with a fixmap marker.
-    /// Unknown field IDs and non-string values are silently skipped.
     static func decode(_ data: Data) -> [Int: String]? {
         guard !data.isEmpty else { return nil }
         let bytes = Array(data)
@@ -107,11 +85,6 @@ enum MsgPack {
         return result.isEmpty ? nil : result
     }
 
-    /// Extracts a peer display name from LXMF announce app_data.
-    ///
-    /// Supports both formats used by LXMF clients:
-    /// - map:  `{0x01: <display_name>, ...}`
-    /// - list: `[display_name, stamp_cost]`
     static func decodeDisplayName(_ data: Data) -> String? {
         if let map = decode(data), let name = map[Field.displayName.rawValue], !name.isEmpty {
             return name
@@ -119,11 +92,6 @@ enum MsgPack {
         return decodeDisplayNameAndStampCost(data).displayName
     }
 
-    /// Extracts `(display_name, stamp_cost)` from LXMF announce app_data.
-    ///
-    /// Supports both formats:
-    /// - map:  `{0x01: <display_name>, 0x0A: <stamp_cost_as_string>, ...}`
-    /// - list: `[display_name, stamp_cost]`
     static func decodeDisplayNameAndStampCost(_ data: Data) -> (displayName: String?, stampCost: Int?) {
         if let map = decode(data) {
             let name = map[Field.displayName.rawValue].flatMap { $0.isEmpty ? nil : $0 }
@@ -143,6 +111,37 @@ enum MsgPack {
     /// Extracts only stamp cost from announce app_data.
     static func decodeStampCost(_ data: Data) -> Int? {
         decodeDisplayNameAndStampCost(data).stampCost
+    }
+
+    /// Extracts the preferred propagation node hash from delivery announce app_data (3rd element).
+    static func decodeAnnouncedPropagationNode(_ data: Data) -> Data? {
+        let bytes = Array(data)
+        guard !bytes.isEmpty else { return nil }
+
+        var i = 0
+        let count: Int
+        let tag = bytes[i]
+        if tag & 0xF0 == 0x90 {
+            count = Int(tag & 0x0F)
+            i += 1
+        } else if tag == 0xDC {
+            guard i + 2 < bytes.count else { return nil }
+            count = (Int(bytes[i + 1]) << 8) | Int(bytes[i + 2])
+            i += 3
+        } else {
+            return nil
+        }
+
+        guard count >= 3 else { return nil }
+
+        var reader = Reader(Data(bytes[i...]))
+        // Skip element 0 (display_name) and element 1 (stamp_cost)
+        guard (try? reader.skipValue()) != nil else { return nil }
+        guard (try? reader.skipValue()) != nil else { return nil }
+
+        // Element 2: propagation node hash (binary, 16 bytes) or nil
+        guard let nodeHash = try? reader.readBytesOrString(), nodeHash.count == 16 else { return nil }
+        return nodeHash
     }
 
     /// Extracts propagation-node target stamp cost from `lxmf.propagation` app_data.
@@ -214,10 +213,6 @@ enum MsgPack {
         let limitKilobytes: Double?
     }
 
-    /// Encodes a Reticulum LINK request payload for LXMF propagation `"/get"`.
-    ///
-    /// Wire format:
-    /// `msgpack([timestamp, truncated_hash("/get"), [wants, haves, limit_kb?]])`
     static func encodePropagationGetLinkRequest(
         timestamp: Double = Date().timeIntervalSince1970,
         wants: [Data]?,
@@ -274,10 +269,6 @@ enum MsgPack {
         )
     }
 
-    /// Decodes a Reticulum LINK response envelope:
-    /// `msgpack([request_id, response_data])`
-    ///
-    /// Used for propagation `"/get"` responses.
     static func decodePropagationGetLinkResponse(_ data: Data) -> (requestID: Data, response: PropagationGetResponse)? {
         var reader = Reader(data)
         guard let outerCount = try? reader.readArrayHeader(), outerCount == 2 else { return nil }
@@ -423,7 +414,7 @@ enum MsgPack {
         (0x90...0x9F).contains(tag) || tag == 0xDC || tag == 0xDD
     }
 
-    private static func propagationGetPathHash() -> Data {
+    static func propagationGetPathHash() -> Data {
         Hashing.truncatedHash(Data("/get".utf8), length: 16)
     }
 
@@ -612,6 +603,294 @@ enum MsgPack {
         let displayName = rawName.flatMap { $0.isEmpty ? nil : $0 }
         return (displayName, stampCost)
     }
+
+    // MARK: - Resource Advertisement
+
+    /// Parsed Reticulum Resource advertisement (context 0x02).
+    struct ResourceAdvertisement {
+        let transferSize: Int    // "t" — encrypted data size
+        let dataSize: Int        // "d" — uncompressed data size
+        let numParts: Int        // "n" — total parts in segment
+        let resourceHash: Data   // "h" — 32-byte SHA-256
+        let randomHash: Data     // "r" — 4-byte random prefix
+        let originalHash: Data   // "o" — hash of first segment
+        let segmentIndex: Int    // "i" — 1-based segment index
+        let totalSegments: Int   // "l" — total segment count
+        let requestID: Data?     // "q" — optional request ID
+        let flags: UInt8         // "f" — bit flags
+        let hashmapRaw: Data     // "m" — first hashmap segment (concatenated 4-byte hashes)
+
+        var isEncrypted: Bool  { flags & 0x01 != 0 }
+        var isCompressed: Bool { flags & 0x02 != 0 }
+        var isSplit: Bool      { flags & 0x04 != 0 }
+        var isRequest: Bool    { flags & 0x08 != 0 }
+        var isResponse: Bool   { flags & 0x10 != 0 }
+        var hasMetadata: Bool  { flags & 0x20 != 0 }
+    }
+
+    /// Parses a ``ResourceAdvertisement`` from msgpack-encoded bytes.
+    static func decodeResourceAdvertisement(_ data: Data) -> ResourceAdvertisement? {
+        var reader = Reader(data)
+        guard let count = try? reader.readMapHeader(), count >= 8 else { return nil }
+
+        var t: Int?
+        var d: Int?
+        var n: Int?
+        var h: Data?
+        var r: Data?
+        var o: Data?
+        var i: Int = 1
+        var l: Int = 1
+        var q: Data?
+        var f: UInt8 = 0
+        var m: Data?
+
+        for _ in 0..<count {
+            guard let key = try? reader.readStringKey() else { return nil }
+            switch key {
+            case "t": t = (try? reader.readIntOrNil()) ?? nil
+            case "d": d = (try? reader.readIntOrNil()) ?? nil
+            case "n": n = (try? reader.readIntOrNil()) ?? nil
+            case "h": h = try? reader.readBytesOrString()
+            case "r": r = try? reader.readBytesOrString()
+            case "o": o = try? reader.readBytesOrString()
+            case "i": i = (try? reader.readIntOrNil()) ?? 1
+            case "l": l = (try? reader.readIntOrNil()) ?? 1
+            case "q":
+                // Can be nil (None) or bytes.
+                if let qByte = try? reader.readByte() {
+                    if qByte == 0xC0 {
+                        q = nil // msgpack nil
+                    } else {
+                        reader.unreadByte()
+                        q = try? reader.readBytesOrString()
+                    }
+                }
+            case "f":
+                if let fv = try? reader.readIntOrNil() { f = UInt8(fv & 0xFF) }
+            case "m": m = try? reader.readBytesOrString()
+            default:
+                try? reader.skipValue()
+            }
+        }
+
+        guard let t, let d, let n, let h, let r, let o, let m else { return nil }
+        return ResourceAdvertisement(
+            transferSize: t, dataSize: d, numParts: n,
+            resourceHash: h, randomHash: r, originalHash: o,
+            segmentIndex: i, totalSegments: l, requestID: q,
+            flags: f, hashmapRaw: m
+        )
+    }
+
+    // MARK: - General-purpose encode/decode
+
+    /// Encodes a value as msgpack. Supports: Data, Int, Double, Bool, String,
+    /// [Any], [Int: Any], nil (as NSNull or Optional<Any>.none).
+    static func encode(_ value: Any) throws -> Data {
+        switch value {
+        case let data as Data:
+            return encodeBinary(data)
+        case let int as Int:
+            return encodeInteger(int)
+        case let double as Double:
+            return encodeDouble(double)
+        case let bool as Bool:
+            return bool ? Data([0xC3]) : Data([0xC2])
+        case let str as String:
+            let bytes = Data(str.utf8)
+            return encodeString(bytes)
+        case let array as [Any]:
+            var out = encodeArrayHeader(array.count)
+            for element in array {
+                out.append(try encode(element))
+            }
+            return out
+        case let dict as [Int: Any]:
+            var out = encodeMapHeader(dict.count)
+            for (key, val) in dict.sorted(by: { $0.key < $1.key }) {
+                out.append(encodeInteger(key))
+                out.append(try encode(val))
+            }
+            return out
+        case is NSNull:
+            return Data([0xC0])
+        case let optional as Any?:
+            if let unwrapped = optional {
+                return try encode(unwrapped)
+            } else {
+                return Data([0xC0])
+            }
+        default:
+            return Data([0xC0]) // nil for unsupported types
+        }
+    }
+
+    /// Decodes msgpack data into a loosely-typed value.
+    /// Returns: Data (bin), Int, Double, Bool, String, [Any?], [AnyHashable: Any?], or nil.
+    static func decodeAny(_ data: Data) -> Any? {
+        var reader = Reader(data)
+        return try? readAny(reader: &reader)
+    }
+
+    /// Reads a single msgpack value from the reader.
+    private static func readAny(reader: inout Reader) throws -> Any? {
+        let tag = try reader.readByte()
+        switch tag {
+        // nil
+        case 0xC0: return nil
+        // bool
+        case 0xC2: return false
+        case 0xC3: return true
+        // positive fixint
+        case 0x00...0x7F: return Int(tag)
+        // negative fixint
+        case 0xE0...0xFF: return Int(Int8(bitPattern: tag))
+        // uint8
+        case 0xCC: return Int(try reader.readByte())
+        // uint16
+        case 0xCD: return Int(try reader.readUInt16())
+        // uint32
+        case 0xCE: return Int(try reader.readUInt32())
+        // uint64
+        case 0xCF: return Int(try reader.readUInt64())
+        // int8
+        case 0xD0: return Int(Int8(bitPattern: try reader.readByte()))
+        // int16
+        case 0xD1: return Int(Int16(bitPattern: try reader.readUInt16()))
+        // int32
+        case 0xD2: return Int(Int32(bitPattern: try reader.readUInt32()))
+        // int64
+        case 0xD3: return Int(Int64(bitPattern: try reader.readUInt64()))
+        // float32
+        case 0xCA:
+            let bits = try reader.readUInt32()
+            return Double(Float(bitPattern: bits))
+        // float64
+        case 0xCB:
+            let bits = try reader.readUInt64()
+            return Double(bitPattern: bits)
+        // fixstr
+        case 0xA0...0xBF:
+            let len = Int(tag & 0x1F)
+            return Data(try reader.readN(len))
+        // str8
+        case 0xD9:
+            let len = Int(try reader.readByte())
+            return Data(try reader.readN(len))
+        // str16
+        case 0xDA:
+            let len = Int(try reader.readUInt16())
+            return Data(try reader.readN(len))
+        // str32
+        case 0xDB:
+            let len = Int(try reader.readUInt32())
+            return Data(try reader.readN(len))
+        // bin8
+        case 0xC4:
+            let len = Int(try reader.readByte())
+            return Data(try reader.readN(len))
+        // bin16
+        case 0xC5:
+            let len = Int(try reader.readUInt16())
+            return Data(try reader.readN(len))
+        // bin32
+        case 0xC6:
+            let len = Int(try reader.readUInt32())
+            return Data(try reader.readN(len))
+        // fixarray
+        case 0x90...0x9F:
+            let count = Int(tag & 0x0F)
+            return try readAnyArray(reader: &reader, count: count)
+        // array16
+        case 0xDC:
+            let count = Int(try reader.readUInt16())
+            return try readAnyArray(reader: &reader, count: count)
+        // array32
+        case 0xDD:
+            let count = Int(try reader.readUInt32())
+            return try readAnyArray(reader: &reader, count: count)
+        // fixmap
+        case 0x80...0x8F:
+            let count = Int(tag & 0x0F)
+            return try readAnyMap(reader: &reader, count: count)
+        // map16
+        case 0xDE:
+            let count = Int(try reader.readUInt16())
+            return try readAnyMap(reader: &reader, count: count)
+        // map32
+        case 0xDF:
+            let count = Int(try reader.readUInt32())
+            return try readAnyMap(reader: &reader, count: count)
+        default:
+            throw MsgPackReaderError.malformed
+        }
+    }
+
+    private static func readAnyArray(reader: inout Reader, count: Int) throws -> [Any?] {
+        var arr: [Any?] = []
+        arr.reserveCapacity(count)
+        for _ in 0..<count {
+            arr.append(try readAny(reader: &reader))
+        }
+        return arr
+    }
+
+    private static func readAnyMap(reader: inout Reader, count: Int) throws -> [AnyHashable: Any?] {
+        var dict: [AnyHashable: Any?] = [:]
+        for _ in 0..<count {
+            let key = try readAny(reader: &reader)
+            let value = try readAny(reader: &reader)
+            if let hashKey = key as? AnyHashable {
+                dict[hashKey] = value
+            }
+        }
+        return dict
+    }
+
+    // MARK: - Encode helpers (internal)
+
+    private static func encodeString(_ bytes: Data) -> Data {
+        if bytes.count <= 31 {
+            var out = Data([0xA0 | UInt8(bytes.count)])
+            out.append(bytes)
+            return out
+        } else if bytes.count <= 255 {
+            var out = Data([0xD9, UInt8(bytes.count)])
+            out.append(bytes)
+            return out
+        } else if bytes.count <= 65535 {
+            var out = Data([0xDA])
+            out.append(UInt8(bytes.count >> 8))
+            out.append(UInt8(bytes.count & 0xFF))
+            out.append(bytes)
+            return out
+        } else {
+            var out = Data([0xDB])
+            let c = UInt32(bytes.count)
+            out.append(UInt8((c >> 24) & 0xFF))
+            out.append(UInt8((c >> 16) & 0xFF))
+            out.append(UInt8((c >> 8) & 0xFF))
+            out.append(UInt8(c & 0xFF))
+            out.append(bytes)
+            return out
+        }
+    }
+
+    private static func encodeMapHeader(_ count: Int) -> Data {
+        if count <= 15 {
+            return Data([0x80 | UInt8(count)])
+        } else if count <= 65535 {
+            return Data([0xDE, UInt8(count >> 8), UInt8(count & 0xFF)])
+        } else {
+            let c = UInt32(count)
+            return Data([0xDF,
+                         UInt8((c >> 24) & 0xFF),
+                         UInt8((c >> 16) & 0xFF),
+                         UInt8((c >> 8) & 0xFF),
+                         UInt8(c & 0xFF)])
+        }
+    }
 }
 
 private struct Reader {
@@ -765,6 +1044,28 @@ private struct Reader {
         default:
             throw MsgPackReaderError.malformed
         }
+    }
+
+    mutating func readMapHeader() throws -> Int {
+        let tag = try readByte()
+        switch tag {
+        case 0x80...0x8F:
+            return Int(tag & 0x0F)
+        case 0xDE:
+            return Int(try readUInt16())
+        case 0xDF:
+            return Int(try readUInt32())
+        default:
+            throw MsgPackReaderError.malformed
+        }
+    }
+
+    mutating func readStringKey() throws -> String {
+        let raw = try readBytesOrString()
+        guard let s = String(data: raw, encoding: .utf8) else {
+            throw MsgPackReaderError.malformed
+        }
+        return s
     }
 
     mutating func skipValue() throws {

@@ -4,18 +4,6 @@ import Foundation
 @testable import ReticulumPackets
 @testable import LXMF
 
-/// End-to-end test simulating the full outbound LXMF OPPORTUNISTIC flow:
-///
-/// 1. Create two identities (sender + recipient)
-/// 2. Create LXMF message
-/// 3. Build Reticulum packet (as AppModel.send does)
-/// 4. Encrypt (as TCPClientInterface.send does)
-/// 5. Decrypt (as the recipient would)
-/// 6. Parse LXMF message
-/// 7. Verify content matches
-///
-/// If this test passes, the Swift implementation is internally consistent.
-/// Any outbound failure would be due to transport/network issues, not crypto.
 @Suite("Outbound E2E")
 struct OutboundE2ETests {
 
@@ -179,13 +167,6 @@ struct OutboundE2ETests {
             identityHash: recipient.hash
         )
 
-        // Python constant: ENCRYPTED_PACKET_MAX_CONTENT = 295
-        // LXMF content overhead: 16(src) + 64(sig) + ~10(msgpack overhead) = ~90 bytes
-        // After encryption: +80 bytes (ephPub+iv+hmac) + PKCS7 padding (up to 16)
-        // Header: 19 bytes
-        // Max encrypted payload: 500 - 19 = 481 bytes
-        // Max plaintext: 481 - 80 = 401 bytes (before padding)
-        // Max content: 401 - 90 = ~311 bytes (conservative estimate)
 
         // Try with 200 bytes of content (should fit easily)
         let content = String(repeating: "X", count: 200)
@@ -204,5 +185,100 @@ struct OutboundE2ETests {
         )
         let totalPacketSize = 19 + encrypted.count
         #expect(totalPacketSize <= 500, "200-char message exceeds MTU: \(totalPacketSize) bytes")
+    }
+
+    @Test("Paper message round-trip: create URI → import → verify")
+    func paperMessageRoundTrip() throws {
+        let sender    = try Identity.generate()
+        let recipient = try Identity.generate()
+        let content   = "Paper message test"
+        let title     = "Test Title"
+        let timestamp = Date().timeIntervalSince1970
+
+        let recipientDestHash = Destination.hash(
+            appName: "lxmf", aspects: ["delivery"],
+            identityHash: recipient.hash
+        )
+
+        guard let recipientPrivKeyData = recipient.privateKeyData else {
+            Issue.record("Recipient has no private key")
+            return
+        }
+        let recipientX25519Pub = Data(recipient.publicKey.prefix(32))
+
+        let paperPacked = try LXMFMessage.packPaper(
+            destinationHash: recipientDestHash,
+            sourceIdentity: sender,
+            recipientX25519PublicKey: recipientX25519Pub,
+            recipientIdentityHash: recipient.hash,
+            content: content,
+            title: title,
+            timestamp: timestamp
+        )
+
+        // Verify it starts with dest hash
+        #expect(Data(paperPacked.prefix(16)) == recipientDestHash)
+        #expect(paperPacked.count > 16)
+
+        // Generate URI
+        let uri = LXMFMessage.paperURI(paperPacked: paperPacked)
+        #expect(uri.hasPrefix("lxm://"))
+        #expect(!uri.contains("="))
+        #expect(!uri.contains("+"))
+
+        // Import: strip scheme, base64url decode
+        let encoded = String(uri.dropFirst("lxm://".count))
+        let padded = encoded
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let paddedLen = padded + String(repeating: "=", count: (4 - padded.count % 4) % 4)
+        guard let decoded = Data(base64Encoded: paddedLen) else {
+            Issue.record("Could not base64-decode paper URI")
+            return
+        }
+        #expect(decoded == paperPacked)
+
+        // Decrypt
+        let destHash = Data(decoded.prefix(16))
+        #expect(destHash == recipientDestHash)
+
+        let encrypted = Data(decoded[16...])
+        let recipientX25519Priv = Data(recipientPrivKeyData.prefix(32))
+        let decrypted = try ReticulumToken.decrypt(
+            encrypted,
+            recipientX25519PrivateKey: recipientX25519Priv,
+            identityHash: recipient.hash
+        )
+
+        // Reconstruct full packed and parse
+        var fullPacked = destHash
+        fullPacked.append(decrypted)
+        let msg = try LXMFMessage(packed: fullPacked)
+
+        #expect(msg.destinationHash == recipientDestHash)
+        #expect(msg.content == content)
+        #expect(msg.title == title)
+        #expect(abs(msg.timestamp - timestamp) < 0.001)
+
+        let senderEd25519Pub = Data(sender.publicKey[32..<64])
+        #expect(msg.verifySignature(ed25519PublicKey: senderEd25519Pub))
+    }
+
+    @Test("LXMF field constants match Python reference values")
+    func fieldConstantsMatch() {
+        #expect(LXMFField.embeddedLXMs.rawValue == 0x01)
+        #expect(LXMFField.telemetry.rawValue == 0x02)
+        #expect(LXMFField.fileAttachments.rawValue == 0x05)
+        #expect(LXMFField.image.rawValue == 0x06)
+        #expect(LXMFField.audio.rawValue == 0x07)
+        #expect(LXMFField.ticket.rawValue == 0x0C)
+        #expect(LXMFField.renderer.rawValue == 0x0F)
+        #expect(LXMFField.customType.rawValue == 0xFB)
+        #expect(LXMFField.customData.rawValue == 0xFC)
+        #expect(LXMFField.debug.rawValue == 0xFF)
+        #expect(LXMFRenderer.plain.rawValue == 0x00)
+        #expect(LXMFRenderer.micron.rawValue == 0x01)
+        #expect(LXMFRenderer.markdown.rawValue == 0x02)
+        #expect(LXMFRenderer.bbcode.rawValue == 0x03)
     }
 }

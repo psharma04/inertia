@@ -3,13 +3,6 @@ import Foundation
 import Darwin
 @testable import ReticulumInterfaces
 
-// HDLC Framing
-//
-// Reticulum's TCPClientInterface frames packets using HDLC:
-//   FLAG (0x7E) + escaped_payload + FLAG (0x7E)
-//
-// Bytes 0x7E and 0x7D inside the payload are escaped as
-//   ESC (0x7D) followed by (byte XOR 0x20).
 
 private enum HDLC {
     static let FLAG:     UInt8 = 0x7E
@@ -31,9 +24,6 @@ private enum HDLC {
         return result
     }
 
-    /// Extract the first complete HDLC frame from `buffer`.
-    ///
-    /// Returns `(payload, remaining)` or `nil` if no complete frame exists yet.
     static func deframe(_ buffer: Data) -> (Data, Data)? {
         let bytes = Array(buffer)
         guard let start = bytes.firstIndex(of: FLAG) else { return nil }
@@ -59,15 +49,6 @@ private enum HDLC {
     }
 }
 
-// MockTCPServer
-//
-// An in-process TCP server using POSIX sockets.
-//
-// Using BSD sockets instead of NWListener avoids:
-//   - async listener-ready state transitions (which require Network.framework)
-//   - entitlement / sandbox restrictions that can affect NWListener in tests
-//
-// All I/O runs on a background DispatchQueue; actor isolation protects state.
 
 private actor MockTCPServer {
     private var listenFd:  Int32 = -1
@@ -272,10 +253,6 @@ private struct TestTimeoutError: Error, CustomStringConvertible {
     let description = "test timed out waiting for async condition"
 }
 
-/// Class wrapper that makes `AsyncStream.AsyncIterator` safe for capture in
-/// `@Sendable` closures.  `AsyncStream.AsyncIterator` is a non-Sendable struct;
-/// wrapping it in a reference type avoids the actor-isolated `mutating async`
-/// restriction while keeping sequential access safe for single-consumer use.
 private final class IteratorBox<T: Sendable>: @unchecked Sendable {
     private var iterator: AsyncStream<T>.AsyncIterator
 
@@ -536,7 +513,8 @@ struct TCPPacketReceivingTests {
             received.append(pkt)
         }
 
-        #expect(received == frames,
+        // Tasks are unstructured so order isn't guaranteed; compare as sets.
+        #expect(Set(received) == Set(frames),
                 "each server frame must produce exactly one distinct onReceive invocation")
 
         continuation.finish()

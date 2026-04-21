@@ -20,6 +20,7 @@ targets:
       - App/Sources
     resources:
       - App/Resources/Assets.xcassets
+      - AppIcon.icon
     info:
       path: App/Info.plist
       properties:
@@ -27,6 +28,17 @@ targets:
         CFBundleShortVersionString: "0.1"
         CFBundleVersion: "1"
         NSFaceIDUsageDescription: "Inertia uses Face ID to lock and unlock access to your local data."
+        NSPhotoLibraryUsageDescription: "Inertia needs access to your photo library to select and share images."
+        BGTaskSchedulerPermittedIdentifiers:
+          - chat.inertia.background-refresh
+        CFBundleURLTypes:
+          - CFBundleURLName: LXMF Paper Message
+            CFBundleURLSchemes:
+              - lxm
+              - lxmf
+          - CFBundleURLName: NomadNet Page
+            CFBundleURLSchemes:
+              - nomadnet
         UILaunchScreen:
           UIColorName: ""
         UISupportedInterfaceOrientations:
@@ -49,6 +61,10 @@ targets:
         product: LXMF
       - package: InertiaCore
         product: NomadNet
+      - package: InertiaCore
+        product: Persistence
+      - package: InertiaCore
+        product: Services
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: chat.inertia.app
       SWIFT_VERSION: "6.0"
@@ -57,7 +73,7 @@ targets:
       # DEVELOPMENT_TEAM: XXXXXXXXXX
       MARKETING_VERSION: "0.1"
       CURRENT_PROJECT_VERSION: "1"
-      ASSETCATALOG_COMPILER_APPICON_NAME: messages-icon
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
       ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
 
@@ -73,6 +89,17 @@ targets:
       - target: Inertia
       - package: InertiaCore
         product: ReticulumCrypto
+
+  InertiaUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "26.0"
+    settings:
+      GENERATE_INFOPLIST_FILE: YES
+    sources:
+      - App/Tests/UITests
+    dependencies:
+      - target: Inertia
 
 configs:
   Debug: debug

@@ -1,11 +1,5 @@
 import Foundation
 
-/// Resolves a Python interpreter that can import `RNS` and `LXMF`.
-///
-/// Strategy:
-/// 1. Reuse a discovered interpreter from PATH or `INERTIA_PYTHON`.
-/// 2. If imports fail everywhere, provision a local venv in `.build/` and
-///    install `rns` + `lxmf` there.
 enum PythonRuntimeResolver {
     enum ResolverError: Error, LocalizedError {
         case noPythonInterpreter(candidates: [String])

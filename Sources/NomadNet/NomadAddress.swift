@@ -1,13 +1,5 @@
 import Foundation
 
-/// Canonical Nomad address parser/normaliser.
-///
-/// Supports:
-/// - `<hash>`
-/// - `<hash>/<path>`
-/// - `<hash>:/<path>`
-/// - `nn://<hash>/<path>`
-/// - local path links like `:/page/index.mu` (requires default destination hash)
 public struct NomadAddress: Hashable, Sendable {
     public let raw: String
     public let destinationHashHex: String?
@@ -31,7 +23,9 @@ public struct NomadAddress: Hashable, Sendable {
         }
 
         var working = cleaned
-        if working.lowercased().hasPrefix("nn://") {
+        if working.lowercased().hasPrefix("nomadnet://") {
+            working = String(working.dropFirst("nomadnet://".count))
+        } else if working.lowercased().hasPrefix("nn://") {
             working = String(working.dropFirst(5))
         }
 

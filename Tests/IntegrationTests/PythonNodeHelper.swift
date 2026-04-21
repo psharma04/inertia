@@ -2,25 +2,6 @@ import Foundation
 
 // PythonNodeHelper
 
-/// Manages a Python Reticulum test node subprocess for integration testing.
-///
-/// Launches `rns_test_node.py` (bundled in `Resources/`) and communicates
-/// over the child process's stdout using the following text protocol:
-///
-///   READY <port> <identity_hash_hex(32)> <lxmf_dest_hash_hex(32)>
-///   RECEIVED <content_utf8>
-///   ERROR <reason>
-///
-/// Usage:
-/// ```swift
-/// let python = try PythonNodeHelper()
-/// defer { python.stop() }
-///
-/// let info = try await python.waitForReady(timeout: 15)
-/// // info.port, info.identityHash, info.destinationHash are populated
-///
-/// let content = try await python.waitForMessage(timeout: 15)
-/// ```
 final class PythonNodeHelper: @unchecked Sendable {
 
     // Nested types
@@ -72,11 +53,6 @@ final class PythonNodeHelper: @unchecked Sendable {
 
     // Lifecycle
 
-    /// Start the Python RNS test node.
-    ///
-    /// - Parameter waitTimeout: How long (seconds) the Python node should
-    ///   wait for an incoming LXMF message before exiting automatically.
-    ///   Passed as the first argument to `rns_test_node.py`.
     init(waitTimeout: TimeInterval = 30) throws {
         guard let scriptURL = Bundle.module.url(
             forResource: "rns_test_node", withExtension: "py"
@@ -118,21 +94,11 @@ final class PythonNodeHelper: @unchecked Sendable {
 
     // Protocol reading
 
-    /// Block (async) until the Python node prints its READY line.
-    ///
-    /// - Parameter timeout: Maximum seconds to wait.
-    /// - Throws: `HelperError.timeout` or `HelperError.pythonNodeError`.
     func waitForReady(timeout: TimeInterval) async throws -> ReadyInfo {
         let line = try await waitForLine(prefix: "READY ", timeout: timeout)
         return try parseReadyLine(line)
     }
 
-    /// Block (async) until the Python node prints a RECEIVED line confirming
-    /// that it successfully decoded an incoming LXMF message.
-    ///
-    /// - Parameter timeout: Maximum seconds to wait.
-    /// - Returns: The message content string.
-    /// - Throws: `HelperError.timeout` or `HelperError.pythonNodeError`.
     func waitForMessage(timeout: TimeInterval) async throws -> String {
         let line = try await waitForLine(prefix: "RECEIVED ", timeout: timeout)
         return String(line.dropFirst("RECEIVED ".count))
@@ -167,9 +133,6 @@ final class PythonNodeHelper: @unchecked Sendable {
         throw HelperError.timeout(prefix.trimmingCharacters(in: .whitespaces))
     }
 
-    /// Drain any bytes currently available in the pipe into `outputBuffer` and
-    /// return a snapshot.  Safe to call from any thread or async context because
-    /// it holds `bufferMutex` only for the duration of the synchronous mutation.
     private func drainAndSnapshot() -> String {
         let available = readHandle.availableData
         bufferMutex.lock()

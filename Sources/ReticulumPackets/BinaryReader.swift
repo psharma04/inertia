@@ -1,9 +1,5 @@
 import Foundation
 
-/// Reads primitive values sequentially from a `Data` buffer using big-endian byte order.
-///
-/// Maintains a cursor that advances with each read. Throws
-/// `BinaryReaderError.outOfBounds` if a read would exceed the buffer length.
 public struct BinaryReader: Sendable {
     private let data: Data
     private var cursor: Int

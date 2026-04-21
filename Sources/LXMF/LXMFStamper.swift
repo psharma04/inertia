@@ -1,12 +1,6 @@
 import Foundation
 import ReticulumCrypto
 
-/// LXMF proof-of-work stamp generation and validation.
-///
-/// This follows Python `LXStamper.py` semantics:
-/// - workblock = concat(HKDF(material, salt=SHA256(material+msgpack(n)), len=256), rounds)
-/// - stamp valid if SHA256(workblock||stamp) <= (1 << (256-cost))
-/// - stamp value = number of leading zero bits in SHA256(workblock||stamp)
 public enum LXMFStamper {
     public static let workblockExpandRounds = 3000
     public static let propagationWorkblockExpandRounds = 1000
@@ -49,9 +43,6 @@ public enum LXMFStamper {
         return lessThanOrEqualBigEndian(digest, target)
     }
 
-    /// Generates a valid stamp for `messageID` and returns `(stamp, value)`.
-    ///
-    /// `value` can exceed `targetCost` and represents effective PoW quality.
     public static func generateStamp(
         messageID: Data,
         stampCost: Int,

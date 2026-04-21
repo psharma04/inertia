@@ -23,12 +23,22 @@ let package = Package(
     ],
     targets: [
 
+        // System Libraries
+
+        .systemLibrary(
+            name: "CBzip2",
+            path: "Sources/CBzip2",
+            pkgConfig: nil,
+            providers: []
+        ),
+
         // Core Protocol Modules
 
         .target(
             name: "ReticulumCrypto",
             dependencies: [
                 .product(name: "Sodium", package: "swift-sodium"),
+                "CBzip2",
             ]
         ),
         .target(
@@ -94,20 +104,12 @@ let package = Package(
             dependencies: ["ReticulumRouting", "ReticulumPackets"]
         ),
         .testTarget(
-            name: "ReticulumCoreTests",
-            dependencies: ["ReticulumCore"]
-        ),
-        .testTarget(
             name: "LXMFTests",
             dependencies: ["LXMF"]
         ),
         .testTarget(
             name: "NomadNetTests",
             dependencies: ["NomadNet"]
-        ),
-        .testTarget(
-            name: "PersistenceTests",
-            dependencies: ["Persistence"]
         ),
         .testTarget(
             name: "ServicesTests",

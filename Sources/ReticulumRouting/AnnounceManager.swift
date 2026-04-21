@@ -1,33 +1,20 @@
 import Foundation
 import ReticulumPackets
 
-/// Handles reception, validation, and deduplication of Reticulum announces.
-///
-/// A valid announce is:
-/// - parseable as a `Packet` with type `.announce`
-/// - carries a well-formed `AnnouncePayload`
-/// - passes Ed25519 signature verification
-/// - has a `randomHash` not seen before (deduplication)
 public actor AnnounceManager {
 
-    private let routingTable:     RoutingTable
+    private let routingTable: RoutingTable
     private var seenRandomHashes: Set<Data> = []
-    private let pathTTL:          TimeInterval
+    private let pathTTL: TimeInterval
 
     public init(
-        routingTable: RoutingTable  = RoutingTable(),
-        pathTTL:      TimeInterval  = 3_600
+        routingTable: RoutingTable = RoutingTable(),
+        pathTTL: TimeInterval = 3_600
     ) {
         self.routingTable = routingTable
-        self.pathTTL      = pathTTL
+        self.pathTTL = pathTTL
     }
 
-    // Public API
-
-    /// Process a raw announce arriving on `fromInterfaceID`.
-    ///
-    /// - Returns: `true` if the announce was accepted (valid, not duplicate);
-    ///   `false` if it was rejected or is a duplicate.
     @discardableResult
     public func receive(data: Data, fromInterfaceID: String) async -> Bool {
         guard
@@ -48,21 +35,19 @@ public actor AnnounceManager {
 
         let hops = Int(packet.header.hops) + 1
         let path = Path(
-            destinationHash:    destHash,
+            destinationHash: destHash,
             nextHopInterfaceID: fromInterfaceID,
-            hops:               hops,
-            expires:            Date(timeIntervalSinceNow: pathTTL)
+            hops: hops,
+            expires: Date(timeIntervalSinceNow: pathTTL)
         )
         await routingTable.insert(path)
         return true
     }
 
-    /// `true` if a valid announce for `destinationHash` has been received.
     public func isKnown(destinationHash: Data) async -> Bool {
         await routingTable.path(for: destinationHash) != nil
     }
 
-    /// `true` if the announce's `randomHash` has already been processed.
     public func isDuplicate(data: Data) -> Bool {
         guard
             let packet  = try? Packet.deserialize(from: data),
@@ -72,7 +57,6 @@ public actor AnnounceManager {
         return seenRandomHashes.contains(payload.randomHash)
     }
 
-    /// Returns the stored path for `destinationHash`, if known.
     public func path(for destinationHash: Data) async -> Path? {
         await routingTable.path(for: destinationHash)
     }

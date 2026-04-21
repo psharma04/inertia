@@ -2,13 +2,6 @@ import Foundation
 
 // NomadPage
 
-/// A page returned by a Nomad Network node.
-///
-/// Wire format of the response payload:
-///   msgpack [request_id_bytes16, content_bytes]
-///
-/// The content is raw Micron markup (UTF-8), served from the node's
-/// pages directory (e.g. ~/.nomadnetwork/storage/pages/index.mu).
 public struct NomadPage: Sendable {
 
     /// The path that was requested (e.g. "/page/index.mu").
@@ -28,6 +21,11 @@ public struct NomadPage: Sendable {
     /// The page content decoded as a UTF-8 string.
     public var contentString: String {
         String(data: content, encoding: .utf8) ?? ""
+    }
+
+    /// Cache TTL from page metadata `#!c=N`, or nil for default.
+    public var cacheTTL: TimeInterval? {
+        micronDocument.cacheTTL
     }
 
     /// Initialise directly (used by NomadClient when parsing responses).

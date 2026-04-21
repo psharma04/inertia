@@ -2,10 +2,6 @@ import Foundation
 
 // Fixture Loading
 
-/// Locates the ProtocolFixtures directory relative to this source file.
-///
-/// Uses `#filePath` so the path is absolute and works regardless of the
-/// current working directory.  No Bundle resources are required.
 enum FixtureLoader {
     static var fixturesRoot: URL {
         URL(fileURLWithPath: #filePath)       // .../Tests/ReticulumPacketsTests/TestHelpers.swift

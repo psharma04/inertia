@@ -1,43 +1,14 @@
 import Foundation
 import ReticulumCrypto
 
-// NomadClient
-
-/// Client for requesting pages and files from a Nomad Network node.
-///
-/// Protocol summary (over an established Reticulum link):
-///
-///   Request (msgpack 3-element array):
-///     [0] timestamp  float64     — time.time() at send
-///     [1] path_hash  bytes(16)   — SHA-256(path.utf8)[0:16]
-///     [2] form_data  map | nil   — form field dict or nil
-///
-///   Response (msgpack 2-element array):
-///     [0] request_id  bytes(16)  — echo of server-assigned request ID
-///     [1] content     bytes      — raw Micron markup (UTF-8)
-///
-/// Key path hashes (SHA-256(path.utf8)[0:16]):
-///   "/page/index.mu"    → fb40abf359b3f25fa0086107c5eee516
-///   "/page/about.mu"    → 88136a8b75cd27b5b7171bffdd657280
-///   "/file/example.txt" → 95958aa7e6b88c228e73771a281f5764
 public actor NomadClient {
 
     private let link: any NomadLinkProtocol
-
-    // Initialiser
 
     public init(link: any NomadLinkProtocol) {
         self.link = link
     }
 
-    // Page requests
-
-    /// Request a page from the node using a deterministic timestamp.
-    ///
-    /// - Parameters:
-    ///   - path: Page path, e.g. "/page/index.mu"
-    ///   - timestamp: Unix timestamp to embed in the request (for testing).
-    /// - Throws: NomadError on failure.
     public func requestPage(path: String, timestamp: Double) async throws -> NomadPage {
         let payload = NomadClient.buildRequestPayload(path: path, timestamp: timestamp, formData: nil)
         let response = try await link.request(payload: payload)
@@ -50,12 +21,6 @@ public actor NomadClient {
         try await requestPage(path: path, timestamp: Date().timeIntervalSince1970)
     }
 
-    // File download
-
-    /// Download a file from the node.
-    ///
-    /// - Parameter path: File path, e.g. "/file/example.txt"
-    /// - Throws: NomadError on failure.
     public func downloadFile(path: String) async throws -> Data {
         let payload = NomadClient.buildRequestPayload(path: path, timestamp: Date().timeIntervalSince1970, formData: nil)
         let response = try await link.request(payload: payload)
@@ -63,32 +28,10 @@ public actor NomadClient {
         return content
     }
 
-    // Wire format utilities
-
-    /// Compute the 16-byte path hash used in NomadNet requests.
-    ///
-    /// path_hash = SHA-256(path.utf8)[0:16]
-    ///
-    /// Test vectors:
-    ///   pathHash("/page/index.mu")    == fb40abf359b3f25fa0086107c5eee516
-    ///   pathHash("/page/about.mu")    == 88136a8b75cd27b5b7171bffdd657280
-    ///   pathHash("/file/example.txt") == 95958aa7e6b88c228e73771a281f5764
     public static func pathHash(for path: String) -> Data {
         Hashing.truncatedHash(Data(path.utf8), length: 16)
     }
 
-    /// Build the msgpack-encoded request payload.
-    ///
-    /// Output: msgpack fixarray(3) + float64 + bin8(16) + nil
-    ///   [timestamp_f64, path_hash_bytes16, form_data_map | nil]
-    ///
-    /// For "/page/index.mu" at t=1700000000.0 with no form data (29 bytes):
-    ///   93cb41d954fc40000000c410fb40abf359b3f25fa0086107c5eee516c0
-    ///
-    /// - Parameters:
-    ///   - path: Page/file path.
-    ///   - timestamp: Unix timestamp.
-    ///   - formData: Optional form field dict (nil for plain GET).
     public static func buildRequestPayload(
         path: String,
         timestamp: Double,
@@ -147,13 +90,140 @@ public actor NomadClient {
         out.append(contentsOf: bytes)
     }
 
-    /// Parse a msgpack-encoded response payload into (requestID, content).
-    ///
-    /// Expected format: fixarray(2) + bin8(16, requestID) + bin8(N, content)
-    ///
-    /// - Parameter data: Raw msgpack response bytes from the link.
-    /// - Returns: Tuple of (16-byte request ID, raw content bytes).
-    /// - Throws: NomadError.invalidMsgpack on malformed input.
+    public static func parsePageRequest(_ data: Data) throws -> (timestamp: Double, pathHash: Data, formData: [String: String]?) {
+        guard !data.isEmpty else { throw NomadError.invalidMsgpack }
+
+        var cursor = data.startIndex
+
+        func readByte() throws -> UInt8 {
+            guard cursor < data.endIndex else { throw NomadError.invalidMsgpack }
+            let b = data[cursor]
+            cursor = data.index(after: cursor)
+            return b
+        }
+
+        func readBytes(_ n: Int) throws -> Data {
+            let end = cursor + n
+            guard end <= data.endIndex else { throw NomadError.invalidMsgpack }
+            let slice = Data(data[cursor ..< end])
+            cursor = end
+            return slice
+        }
+
+        // Must be fixarray(3)
+        let header = try readByte()
+        guard header == 0x93 else { throw NomadError.invalidMsgpack }
+
+        // Parse timestamp: float64 (0xcb + 8 bytes big-endian)
+        let tsTag = try readByte()
+        guard tsTag == 0xcb else { throw NomadError.invalidMsgpack }
+        let tsBytes = try readBytes(8)
+        let tsBits = tsBytes.withUnsafeBytes { $0.load(as: UInt64.self).bigEndian }
+        let timestamp = Double(bitPattern: tsBits)
+
+        // Parse path hash: bin8(16)
+        let phTag = try readByte()
+        let pathHash: Data
+        switch phTag {
+        case 0xc4:
+            let len = Int(try readByte())
+            pathHash = try readBytes(len)
+        case 0xc5:
+            let hi = Int(try readByte())
+            let lo = Int(try readByte())
+            pathHash = try readBytes((hi << 8) | lo)
+        default:
+            throw NomadError.invalidMsgpack
+        }
+
+        // Parse form data: nil (0xc0) or map
+        let fdTag = try readByte()
+        if fdTag == 0xc0 {
+            return (timestamp, pathHash, nil)
+        }
+
+        // fixmap or map16
+        let mapCount: Int
+        if fdTag >= 0x80 && fdTag <= 0x8f {
+            mapCount = Int(fdTag & 0x0f)
+        } else if fdTag == 0xde {
+            let hi = Int(try readByte())
+            let lo = Int(try readByte())
+            mapCount = (hi << 8) | lo
+        } else {
+            throw NomadError.invalidMsgpack
+        }
+
+        var formData = [String: String]()
+        for _ in 0..<mapCount {
+            let key = try readMsgpackStr(from: data, cursor: &cursor)
+            let value = try readMsgpackStr(from: data, cursor: &cursor)
+            formData[key] = value
+        }
+
+        return (timestamp, pathHash, formData)
+    }
+
+    private static func readMsgpackStr(from data: Data, cursor: inout Data.Index) throws -> String {
+        guard cursor < data.endIndex else { throw NomadError.invalidMsgpack }
+        let tag = data[cursor]
+        cursor = data.index(after: cursor)
+
+        let len: Int
+        if tag >= 0xa0 && tag <= 0xbf {
+            len = Int(tag & 0x1f)
+        } else if tag == 0xd9 {
+            guard cursor < data.endIndex else { throw NomadError.invalidMsgpack }
+            len = Int(data[cursor])
+            cursor = data.index(after: cursor)
+        } else if tag == 0xda {
+            guard cursor + 2 <= data.endIndex else { throw NomadError.invalidMsgpack }
+            len = Int(data[cursor]) << 8 | Int(data[data.index(after: cursor)])
+            cursor = data.index(cursor, offsetBy: 2)
+        } else {
+            throw NomadError.invalidMsgpack
+        }
+
+        let end = cursor + len
+        guard end <= data.endIndex else { throw NomadError.invalidMsgpack }
+        let str = String(data: Data(data[cursor..<end]), encoding: .utf8) ?? ""
+        cursor = end
+        return str
+    }
+
+    public static func buildPageResponse(requestID: Data, content: Data) -> Data {
+        var out = Data()
+
+        // fixarray(2)
+        out.append(0x92)
+
+        // request ID as bin
+        appendMsgpackBin(&out, requestID)
+
+        // content as bin
+        appendMsgpackBin(&out, content)
+
+        return out
+    }
+
+    private static func appendMsgpackBin(_ out: inout Data, _ bytes: Data) {
+        if bytes.count <= 255 {
+            out.append(0xc4)
+            out.append(UInt8(bytes.count))
+        } else if bytes.count <= 65535 {
+            out.append(0xc5)
+            out.append(UInt8(bytes.count >> 8))
+            out.append(UInt8(bytes.count & 0xff))
+        } else {
+            out.append(0xc6)
+            out.append(UInt8((bytes.count >> 24) & 0xff))
+            out.append(UInt8((bytes.count >> 16) & 0xff))
+            out.append(UInt8((bytes.count >> 8) & 0xff))
+            out.append(UInt8(bytes.count & 0xff))
+        }
+        out.append(contentsOf: bytes)
+    }
+
     public static func parsePageResponse(_ data: Data) throws -> (requestID: Data, content: Data) {
         guard !data.isEmpty else { throw NomadError.invalidMsgpack }
 

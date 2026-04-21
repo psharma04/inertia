@@ -26,10 +26,6 @@ extension Data {
 
 // Minimal msgpack helpers (for MockNomadNode)
 
-/// Encode a msgpack fixarray(2) response: [request_id(16 bytes), content(N bytes)].
-///
-/// Matches the Python LXMF/NomadNet response format:
-///   msgpack.packb([request_id_bytes, content_bytes])
 func msgpackPageResponse(requestID: Data, content: Data) -> Data {
     var out = Data()
     out.append(0x92)  // fixarray(2)
@@ -50,16 +46,6 @@ func msgpackPageResponse(requestID: Data, content: Data) -> Data {
     return out
 }
 
-/// Extract the 16-byte path hash from a standard NomadNet request payload.
-///
-/// Standard nil-data request layout (29 bytes):
-///   [0]      0x93          fixarray(3)
-///   [1]      0xcb          float64 marker
-///   [2..9]   <8 bytes>     timestamp big-endian
-///   [10]     0xc4          bin8 marker
-///   [11]     0x10 = 16     length byte
-///   [12..27] <16 bytes>    path hash  ← extracted here
-///   [28]     0xc0          nil
 func extractPathHash(from payload: Data) -> Data? {
     guard payload.count >= 28 else { return nil }
     guard payload[payload.startIndex + 0]  == 0x93,  // fixarray(3)

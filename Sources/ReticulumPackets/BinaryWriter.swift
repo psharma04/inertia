@@ -1,9 +1,5 @@
 import Foundation
 
-/// Writes primitive values into a `Data` buffer using big-endian byte order.
-///
-/// All multi-byte integers are written most-significant byte first,
-/// matching the Reticulum wire format.
 public struct BinaryWriter: Sendable {
     public private(set) var data: Data
 

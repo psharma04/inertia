@@ -3,34 +3,9 @@ import Foundation
 import CryptoKit
 @testable import NomadNet
 
-// NomadNet Compatibility Oracle Tests
-//
-// Verifies that the Swift NomadNet client produces wire-compatible output
-// with the Python Nomad Network reference implementation (nomadnet 0.9.8 /
-// rns 1.1.3).
-//
-// Test vectors are computed from the Python reference and documented inline.
-//
-// Protocol overview:
-//   Request  = msgpack([timestamp_f64, path_hash_bytes16, form_data | nil])
-//   Response = msgpack([request_id_bytes16, content_bytes])
-//   path_hash = SHA-256(path.utf8)[0:16]
-//
-// Tests FAIL until NomadNode, NomadClient, and NomadPage are implemented.
 
 // MockNomadNode
 
-/// A mock NomadNet node that handles page and file requests without a real
-/// Reticulum transport layer.
-///
-/// Implements NomadLinkProtocol — responses are assembled from in-memory
-/// page/file registrations rather than an actual RNS link.
-///
-/// Request decoding: extracts the path hash at byte offset [12:28] of the
-/// standard 29-byte nil-data msgpack request.
-///
-/// Response encoding: msgpack([request_id, content]) where
-///   request_id = SHA-256(requestPayload)[0:16]
 actor MockNomadNode: NomadLinkProtocol {
 
     private var pages: [String: Data]  = [:]  // path hash hex → page content bytes
@@ -111,13 +86,6 @@ struct NomadNodeAnnounceTests {
                 "destinationHash mismatch")
     }
 
-    /// Python test vector:
-    ///   identity_hash = aca31af0441d81dbec71e82da0b4b5f5
-    ///   dest_hash     = 8e484af42dd1c865a87fb2d16a5d8e63
-    ///
-    /// Derivation:
-    ///   name_hash10 = SHA-256("nomadnetwork.node")[0:10] = 213e6311bcec54ab4fde
-    ///   dest_hash   = SHA-256(name_hash10 + identity_hash)[0:16]
     @Test("NomadNode.destinationHash(for:) matches Python test vector")
     func destinationHashMatchesPythonTestVector() {
         let identityHash = Data(hexString: "aca31af0441d81dbec71e82da0b4b5f5")!
@@ -173,18 +141,6 @@ struct NomadPathHashingTests {
 @Suite("NomadNet — Request Building")
 struct NomadRequestBuildingTests {
 
-    /// Python reference (t=1700000000.0, path="/page/index.mu", formData=nil):
-    ///   93cb41d954fc40000000c410fb40abf359b3f25fa0086107c5eee516c0
-    ///   29 bytes total
-    ///
-    /// Layout:
-    ///   [0]      93           fixarray(3)
-    ///   [1]      cb           float64 marker
-    ///   [2..9]   41d954fc40000000   timestamp = 1700000000.0
-    ///   [10]     c4           bin8 marker
-    ///   [11]     10           length = 16
-    ///   [12..27] fb40abf359b3f25fa0086107c5eee516  path hash
-    ///   [28]     c0           nil (no form data)
 
     let knownRequestHex = "93cb41d954fc40000000c410fb40abf359b3f25fa0086107c5eee516c0"
     let knownTimestamp  = 1700000000.0
